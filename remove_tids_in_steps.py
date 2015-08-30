@@ -1,10 +1,4 @@
 #! /usr/bin/env python
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Aug 25 15:10:56 2015
-
-@author: afields
-"""
 
 import argparse
 import os
@@ -13,7 +7,7 @@ from yeti.genomics.genome_array import BAMGenomeArray, FivePrimeMapFactory, Size
 from yeti.genomics.roitools import SegmentChain  # , positionlist_to_segments
 import pysam
 from collections import defaultdict
-from Bio import SeqIO  # , Seq
+from Bio import SeqIO
 from string import maketrans
 import pandas as pd
 import numpy as np
@@ -33,7 +27,7 @@ parser.add_argument('--outfile',
 parser.add_argument('--outbed', type=argparse.FileType('w'), default=sys.stdout,
                     help='File to which to output BED-formatted transcripts that passed all filters (Default: stdout)')
 parser.add_argument('--minlen', type=int, default=29,
-                    help='Minimum length of read to be considered when evaluating transcripts. ' \
+                    help='Minimum length of read to be considered when evaluating transcripts. '
                          'Also serves as the size of the segment when identifying multimapping positions. (Default: 29)')
 parser.add_argument('--maxlen', type=int, default=30,
                     help='Maximum length (inclusive) of read to be considered when evaluating transcripts. (Default: 30)')
@@ -78,8 +72,7 @@ if opts.pseudogenes:
 else:
     pseudotids = {}
 
-inbams = [pysam.Samfile(infile) for infile in
-          opts.bamfiles]  # defaults to read mode, and will figure out if it's BAM or SAM
+inbams = [pysam.Samfile(infile) for infile in opts.bamfiles]  # defaults to read mode, and will figure out if it's BAM or SAM
 gnd = BAMGenomeArray(inbams, FivePrimeMapFactory(psite))
 # map to roughly the center of each read so that identical sequences that cross different splice sites
 # (on different transcripts) still end up mapping to the same place
