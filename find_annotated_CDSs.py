@@ -127,8 +127,11 @@ def find_annot_CDSs_by_chrom(chrom_to_do):
                              mode='r', columns=['tfam', 'tmap', 'tid', 'tcoord', 'tstop', 'chrom', 'gcoord', 'gstop', 'strand', 'ORF_name']) \
         .drop_duplicates('ORF_name')
     named_ORFs = named_ORFs[named_ORFs['tfam'].isin(tfams_with_annots)]  # don't bother looking if there aren't any annotated CDSs to be found
-    return tuple(
-        [pd.concat(dfs, ignore_index=True) for dfs in zip(*[find_annot_CDSs(tfam, tfam_ORFs) for (tfam, tfam_ORFs) in named_ORFs.groupby('tfam')])])
+    if not named_ORFs.empty:
+        return tuple(
+            [pd.concat(dfs, ignore_index=True) for dfs in zip(*[find_annot_CDSs(tfam, tfam_ORFs) for (tfam, tfam_ORFs) in named_ORFs.groupby('tfam')])])
+    else:
+        return pd.DataFrame(), pd.DataFrame()
     # return pd.concat([find_annot_CDSs(tfam, tfam_ORFs) for (tfam, tfam_ORFs) in named_ORFs.groupby('tfam')], ignore_index=True)
 
 with pd.get_store(opts.orfstore, mode='r') as orfstore:
