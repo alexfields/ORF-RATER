@@ -66,29 +66,31 @@ def find_annot_CDSs(tfam, tfam_ORFs):
     chrom = currtfam.chrom
     strand = currtfam.strand
     tfam_genpos = np.array(currtfam.get_position_list(stranded=True))
-    annot_CDS_dfs = []
+    # annot_CDS_dfs = []
+    found_CDS_info = []
+    unfound_CDS_info = []
     for (annot_tfam_lookup, annot_tid_lookup) in zip(annot_tfam_lookups, annot_tid_lookups):
         if tfam in annot_tfam_lookup:
-            annot_CDS_dfs.append(pd.DataFrame.from_items([('tfam', tfam),
-                                                          ('tid', annot_tfam_lookup[tfam]),
-                                                          ('chrom', chrom),
-                                                          ('gcoord', 0),
-                                                          ('gstop', 0),
-                                                          ('strand', strand),
-                                                          ('AAlen', 0),
-                                                          ('ORF_name', '')]))  # ORF_name left blank if not found
+            # annot_CDS_dfs.append(pd.DataFrame.from_items([('tfam', tfam),
+            #                                               ('tid', annot_tfam_lookup[tfam]),
+            #                                               ('chrom', chrom),
+            #                                               ('gcoord', 0),
+            #                                               ('gstop', 0),
+            #                                               ('strand', strand),
+            #                                               ('AAlen', 0),
+            #                                               ('ORF_name', '')]))  # ORF_name left blank if not found
             for (annot_tidx, annot_tid) in enumerate(annot_tfam_lookup[tfam]):
                 curr_trans = Transcript.from_bed(annot_tid_lookup[annot_tid])
                 if curr_trans.cds_start is not None and curr_trans.cds_end is not None:
-                    # found = False
+                    found = False
                     curr_gcoord = curr_trans.get_genomic_coordinate(curr_trans.cds_start)[1]
-                    annot_CDS_dfs[-1].loc[annot_tidx, 'gcoord'] = curr_gcoord
+                    # annot_CDS_dfs[-1].loc[annot_tidx, 'gcoord'] = curr_gcoord
                     curr_gstop = curr_trans.get_genomic_coordinate(curr_trans.cds_end-1)[1]+(strand == '+')*2-1
-                    annot_CDS_dfs[-1].loc[annot_tidx, 'gstop'] = curr_gstop
+                    # annot_CDS_dfs[-1].loc[annot_tidx, 'gstop'] = curr_gstop
                     shared_start = (tfam_ORFs['gcoord'] == curr_gcoord)
                     shared_stop = (tfam_ORFs['gstop'] == curr_gstop)
                     curr_cds_pos = curr_trans.get_cds().get_position_set()
-                    annot_CDS_dfs[-1].loc[annot_tidx, 'AAlen'] = len(curr_cds_pos)/3 - 1
+                    # annot_CDS_dfs[-1].loc[annot_tidx, 'AAlen'] = len(curr_cds_pos)/3 - 1
                     shared_len = (tfam_ORFs['tstop']-tfam_ORFs['tcoord'] == len(curr_cds_pos))
                     possible_ORFs = shared_start & shared_stop & shared_len
                     if possible_ORFs.any() and curr_cds_pos.issubset(tfam_genpos):
@@ -96,10 +98,28 @@ def find_annot_CDSs(tfam, tfam_ORFs):
                         for (ORF_name, tid, tcoord, tstop) in tfam_ORFs.loc[possible_ORFs, ['ORF_name', 'tid', 'tcoord', 'tstop']].itertuples(False):
                             curr_ORF_pos = SegmentChain.from_bed(bedlinedict[tid]).get_genomic_coordinate(np.arange(tcoord, tstop))[1]
                             if curr_cds_pos.issubset(curr_ORF_pos):  # this actually tests for equality, as they are guaranteed the same length
-                                # found = True
-                                annot_CDS_dfs[-1].loc[annot_tidx, 'ORF_name'] = ORF_name
+                                found = True
+                                # annot_CDS_dfs[-1].loc[annot_tidx, 'ORF_name'] = ORF_name
+                                found_CDS_info.append((tfam,
+                                                       annot_tid,
+                                                       chrom,
+                                                       curr_gcoord,
+                                                       curr_gstop,
+                                                       strand,
+                                                       len(curr_cds_pos)/3-1,
+                                                       ORF_name))
                                 break
-    return pd.concat(annot_CDS_dfs, ignore_index=True)
+                    if not found:
+                        unfound_CDS_info.append((tfam,
+                                                 annot_tid,
+                                                 chrom,
+                                                 curr_gcoord,
+                                                 curr_gstop,
+                                                 strand,
+                                                 len(curr_cds_pos)/3-1))
+    return (pd.DataFrame(found_CDS_info, columns=['tfam', 'tid', 'chrom', 'gcoord', 'gstop', 'strand', 'AAlen', 'ORF_name']),
+            pd.DataFrame(unfound_CDS_info, columns=['tfam', 'tid', 'chrom', 'gcoord', 'gstop', 'strand', 'AAlen']))
+    # return pd.concat(annot_CDS_dfs, ignore_index=True)
 
 
 def find_annot_CDSs_by_chrom(chrom_to_do):
@@ -107,18 +127,25 @@ def find_annot_CDSs_by_chrom(chrom_to_do):
                              mode='r', columns=['tfam', 'tmap', 'tid', 'tcoord', 'tstop', 'chrom', 'gcoord', 'gstop', 'strand', 'ORF_name']) \
         .drop_duplicates('ORF_name')
     named_ORFs = named_ORFs[named_ORFs['tfam'].isin(tfams_with_annots)]  # don't bother looking if there aren't any annotated CDSs to be found
-    return pd.concat([find_annot_CDSs(tfam, tfam_ORFs) for (tfam, tfam_ORFs) in named_ORFs.groupby('tfam')], ignore_index=True)
+    return tuple(
+        [pd.concat(dfs, ignore_index=True) for dfs in zip(*[find_annot_CDSs(tfam, tfam_ORFs) for (tfam, tfam_ORFs) in named_ORFs.groupby('tfam')])])
+    # return pd.concat([find_annot_CDSs(tfam, tfam_ORFs) for (tfam, tfam_ORFs) in named_ORFs.groupby('tfam')], ignore_index=True)
 
 with pd.get_store(opts.orfstore, mode='r') as orfstore:
     chroms = orfstore.select('all_ORFs/meta/chrom/meta').values  # because saved as categorical, this is a list of all chromosomes
 workers = mp.Pool(opts.numproc)
-annot_CDSs = pd.concat(workers.map(find_annot_CDSs_by_chrom, chroms), ignore_index=True)
+# annot_CDSs = pd.concat(workers.map(find_annot_CDSs_by_chrom, chroms), ignore_index=True)
+(found_CDSs, unfound_CDSs) = [pd.concat(dfs, ignore_index=True) for dfs in zip(*workers.map(find_annot_CDSs_by_chrom, chroms))]
 workers.close()
 
 for catfield in ['chrom', 'strand']:
-    annot_CDSs[catfield] = annot_CDSs[catfield].astype('category')  # saves disk space and read/write time
+    found_CDSs[catfield] = found_CDSs[catfield].astype('category')  # saves disk space and read/write time
+    unfound_CDSs[catfield] = unfound_CDSs[catfield].astype('category')  # saves disk space and read/write time
 
 origname = opts.CDSstore+'.tmp'
-annot_CDSs.to_hdf(origname, 'annot_CDSs', format='t', data_columns=True)
-sp.call(['ptrepack', origname, opts.orfstore])  # repack for efficiency
+with pd.get_store(origname, mode='w') as outstore:
+    outstore.put('found_CDSs', found_CDSs, format='t', data_columns=True)
+    outstore.put('unfound_CDSs', unfound_CDSs, format='t', data_columns=True)
+# annot_CDSs.to_hdf(origname, 'annot_CDSs', format='t', data_columns=True)
+sp.call(['ptrepack', origname, opts.CDSstore])  # repack for efficiency
 os.remove(origname)
