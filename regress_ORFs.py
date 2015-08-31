@@ -25,15 +25,15 @@ parser.add_argument('outfile', help='Filename to which to output the table of re
 parser.add_argument('--inbed', type=argparse.FileType('rU'), default=sys.stdin, help='Transcriptome BED-file (Default: stdin)')
 parser.add_argument('--startonly', action='store_true', help='Toggle for datasets collected in the presence of initiation inhibitor (e.g. Harr, '
                                                              'LTM). If selected, only "start_strengths" will be calculated and saved.')
-parser.add_argument('--startcodons', type=int, nargs=2, default=[1, 50],
+parser.add_argument('--startrange', type=int, nargs=2, default=[1, 50],
                     help='Region around start codon (in codons) to model explicitly. Ignored if reading metagene from file (Default: 1 30, meaning '
                          'one full codon before the start is modeled, as are the start codon and the 49 codons following it).')
-parser.add_argument('--stopcodons', type=int, nargs=2, default=[7, 0],
+parser.add_argument('--stoprange', type=int, nargs=2, default=[7, 0],
                     help='Region around stop codon (in codons) to model explicitly. Ignored if reading metagene from file (Default: 7 0, meaning '
                          'seven full codons before and including the stop are modeled, but none after).')
 parser.add_argument('--mincdsreads', type=int, default=64,
-                    help='Minimum number of reads required within the body of the CDS (and any surrounding nucleotides indicated by STARTCODONS or '
-                         'STOPNT) for it to be included in the metagene. Ignored if reading metagene from file (Default: 64).')
+                    help='Minimum number of reads required within the body of the CDS (and any surrounding nucleotides indicated by STARTRANGE or '
+                         'STOPRANGE) for it to be included in the metagene. Ignored if reading metagene from file (Default: 64).')
 parser.add_argument('--startcount', type=int, default=0,
                     help='Minimum reads at putative translation initiation codon. Useful to reduce computational burden by only considering ORFs '
                          'with e.g. at least 1 read at the start. (Default: 0)')
@@ -43,7 +43,7 @@ parser.add_argument('--startcount', type=int, default=0,
 parser.add_argument('--max5mis', type=int, default=1, help='Maximum 5\' mismatches to trim. Reads with more than this number will be excluded.'
                                                            '(Default: 1)')
 parser.add_argument('--metagenefile', help='File to save metagene profile, OR if the file already exists, it will be used as the input metagene. '
-                                           'File is formatted as a pickle of three numpy arrays (startprof, cdsprof, and stopprof).')
+                                           'Formatted as tab-delimited text, with position, readlength, value, and type ("START", "CDS", or "STOP").')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 opts = parser.parse_args()
 
@@ -112,12 +112,26 @@ with pd.get_store(opts.orfstore, mode='r') as orfstore:
     chroms = orfstore.select('all_ORFs/meta/chrom/meta').values  # because saved as categorical, this is a list of all chromosomes
 
 if opts.metagenefile and os.path.isfile(opts.metagenefile):
-    import cPickle as pickle
-    with open(opts.metagenefile, 'r') as infile:
-        (startprof, cdsprof, stopprof) = pickle.load(infile)
+    metagene = pd.read_csv(opts.metagenefile, sep='\t').set_index(['region', 'position'])
+    # startprof = metagene[metagene['region'] == 'START'].pivot('rdlen', 'position', 'value')
+    # cdsprof = metagene[metagene['region'] == 'CDS'].pivot('rdlen', 'position', 'value')
+    # stopprof = metagene[metagene['region'] == 'STOP'].pivot('rdlen', 'position', 'value')
+    # assert (startprof.index == rdlens).all()
+    # assert (cdsprof.index == rdlens).all()
+    # assert (stopprof.index == rdlens).all()
+    assert (metagene.columns == rdlens).all()
+    startprof = metagene.loc['START']
+    cdsprof = metagene.loc['CDS']
+    stopprof = metagene.loc['STOP']
+    startnt = (startprof.index.min(), startprof.index.max()+1)
+    assert len(cdsprof) == 3
+    stopnt = (stopprof.index.min(), stopprof.index.max()+1)
+    startprof = startprof.values.T
+    cdsprof = cdsprof.values.T
+    stopprof = stopprof.values.T
 else:
-    startnt = (-abs(opts.startcodons[0])*3, abs(opts.startcodons[1])*3)  # demand <=0 and >= 0 for the bounds
-    stopnt = (-abs(opts.stopcodons[0])*3, abs(opts.stopcodons[1])*3)
+    startnt = (-abs(opts.startrange[0])*3, abs(opts.startrange[1])*3)  # demand <=0 and >= 0 for the bounds
+    stopnt = (-abs(opts.stoprange[0])*3, abs(opts.stoprange[1])*3)
     min_AAlen = (startnt[1]-stopnt[0])/3  # actually should be longer than this to ensure at least one codon in the body
     startlen = startnt[1]-startnt[0]
     stoplen = stopnt[1]-stopnt[0]
@@ -131,9 +145,16 @@ else:
     stopprof /= num_cds_incl
 
     if opts.metagenefile:
-        import cPickle as pickle
-        with open(opts.metagenefile, 'wb') as outfile:
-            pickle.dump((startprof, cdsprof, stopprof), outfile, -1)
+        pd.concat((pd.DataFrame(data=startprof.T,
+                                index=pd.MultiIndex.from_product(['START', np.arange(*startnt)], names=['region', 'position']),
+                                columns=pd.Index(rdlens, name='rdlen')),
+                   pd.DataFrame(data=cdsprof.T,
+                                index=pd.MultiIndex.from_product(['CDS', np.arange(3)], names=['region', 'position']),
+                                columns=pd.Index(rdlens, name='rdlen')),
+                   pd.DataFrame(data=stopprof.T,
+                                index=pd.MultiIndex.from_product(['STOP', np.arange(*stopnt)], names=['region', 'position']),
+                                columns=pd.Index(rdlens, name='rdlen')))) \
+            .to_csv(opts.metagenefile, sep='\t')
 
 for inbam in inbams:
     inbam.close()
