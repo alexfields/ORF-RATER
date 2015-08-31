@@ -43,8 +43,7 @@ parser.add_argument('--startcount', type=int, default=0,
 parser.add_argument('--max5mis', type=int, default=1, help='Maximum 5\' mismatches to trim. Reads with more than this number will be excluded.'
                                                            '(Default: 1)')
 parser.add_argument('--metagenefile', help='File to save metagene profile, OR if the file already exists, it will be used as the input metagene. '
-                                           'File is tab-delimited text; first column is the word "START", "CDS", or "STOP" to indicate which profile '
-                                           'is represented, second column is position within each profile, third column is the average read density.')
+                                           'File is formatted as a pickle of three numpy arrays (startprof, cdsprof, and stopprof).')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 opts = parser.parse_args()
 
@@ -113,32 +112,9 @@ with pd.get_store(opts.orfstore, mode='r') as orfstore:
     chroms = orfstore.select('all_ORFs/meta/chrom/meta').values  # because saved as categorical, this is a list of all chromosomes
 
 if opts.metagenefile and os.path.isfile(opts.metagenefile):
-    startprof = []
-    cdsprof = []
-    stopprof = []
-    with open(opts.metagenefile, 'rU') as infile:
-        line = infile.next()
-        ls = line.strip().split('\t')
-        assert ls[0] == 'START'  # should have at least one codon modeled explicitly
-        startnt_up = int(ls[1])
-        assert startnt_up <= 0
-        prevnt = startnt_up
-        startprof.append(float(ls[2]))
-        for line in infile:
-            ls = line.strip().split('\t')
-            if ls[0] == 'START':
-                startprof.append(float(ls[2]))
-                prevnt = int(ls[1])
-            else:
-                assert ls[0] == 'CDS'
-                startnt_dn = prevnt
-                break
-        for line in infile:
-            ls = line.strip().split('\t')
-            if ls[0] == 'CDS':
-                cdsprof.append((int()))
-            else:
-                assert ls[0] == ''
+    import cPickle as pickle
+    with open(opts.metagenefile, 'r') as infile:
+        (startprof, cdsprof, stopprof) = pickle.load(infile)
 else:
     startnt = (-abs(opts.startcodons[0])*3, abs(opts.startcodons[1])*3)  # demand <=0 and >= 0 for the bounds
     stopnt = (-abs(opts.stopcodons[0])*3, abs(opts.stopcodons[1])*3)
@@ -154,6 +130,10 @@ else:
     cdsprof /= num_cds_incl
     stopprof /= num_cds_incl
 
+    if opts.metagenefile:
+        import cPickle as pickle
+        with open(opts.metagenefile, 'wb') as outfile:
+            pickle.dump((startprof, cdsprof, stopprof), outfile, -1)
 
 for inbam in inbams:
     inbam.close()
