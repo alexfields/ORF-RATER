@@ -18,6 +18,8 @@ parser.add_argument('--cdsbed', type=argparse.FileType('rU'), default=sys.stdin,
                     help='BED-file containing annotated CDSs whose start codons are to be used to identify P-site offsets (Default: stdin)')
 parser.add_argument('--minrdlen', type=int, default=27, help='Minimum permitted read length (Default: 27)')
 parser.add_argument('--maxrdlen', type=int, default=34, help='Maximum permitted read length, inclusive (Default: 34)')
+# parser.add_argument('--minreads', type=int, default=16, help='Minimum number of reads at a given start codon for it to be counted in the average '
+#                                                              '(Default: 16)')
 parser.add_argument('--max5mis', type=int, default=1, help='Maximum 5\' mismatches to trim. Reads with more than this number will be excluded. '
                                                            '(Default: 1)')
 parser.add_argument('--tallyfile', help='Output file for tallied offsets as a function of read length. First column indicates read length for that '
@@ -62,26 +64,41 @@ def get_reads(chrom, strand, gcoord):
 
 
 def map_start_sites((chrom, strand)):
-    offset_tallies = np.zeros((opts.maxrdlen+1-opts.minrdlen, opts.maxrdlen), dtype=np.uint32)
+    # offset_tallies = np.zeros((opts.maxrdlen+1-opts.minrdlen, opts.maxrdlen))
+    offset_tallies = np.zeros((opts.maxrdlen+1-opts.minrdlen, opts.maxrdlen), np.uint32)
     for gcoord in gcoorddict[(chrom, strand)]:
+        # curr_tallies = np.zeros_like(offset_tallies, dtype=np.uint16)
         for read in get_reads(chrom, strand, gcoord):
             (rdlen, nmis) = read_length_nmis(read)
-            if opts.minrdlen <= rdlen <= opts.maxrdlen:
+            if opts.minrdlen <= rdlen <= opts.maxrdlen and nmis <= opts.max5mis:
                 curr_offset = offset_to_gcoord(read, gcoord)
-                if curr_offset is not None:
+                if curr_offset is not None and curr_offset >= nmis:
                     offset_tallies[rdlen-opts.minrdlen, curr_offset-nmis] += 1
+                    # curr_tallies[rdlen-opts.minrdlen, curr_offset-nmis] += 1
+        # nreads = curr_tallies.sum()
+        # if nreads >= opts.minreads:
+        #     offset_tallies += curr_tallies.astype(np.float64)/nreads
     return offset_tallies
 
 workers = mp.Pool(opts.numproc)
-offset_tallies = sum(workers.map(map_start_sites, gcoorddict.keys()))
+offset_tallies = sum(workers.map(map_start_sites, gcoorddict.keys())).astype(np.float64)  # convert to float, or at least int64, for convolution
 workers.close()
 
 if opts.tallyfile:
     with open(opts.tallyfile, 'w') as outfile:
         for rdlen in xrange(opts.minrdlen, opts.maxrdlen+1):
             outfile.write('\t'.join([str(rdlen)]+[str(tally) for tally in offset_tallies[rdlen-opts.minrdlen, :]])+'\n')
+
+# Strategy for determining P-site offsets: find the P-site for the most common read length the simple way (argmax), then see how much each other
+# read length's profile is shifted relative to that. The naive argmax approach can result in some read lengths shifted by e.g. 3 extra nucleotides;
+# this is more robust.
+master_rdlen_idx = np.argmax(offset_tallies.sum(1))  # this is the row with the most reads, to be used as the master
+master_offset = np.argmax(offset_tallies[master_rdlen_idx, :])
+offsets = [master_offset+np.argmax(np.correlate(row, offset_tallies[master_rdlen_idx, :], 'full'))+1-opts.maxrdlen for row in offset_tallies]
+
 with open(opts.offsetfile, 'w') as outfile:
-    for rdlen in xrange(opts.minrdlen, opts.maxrdlen+1):
-        outfile.write('%d\t%d\n' % (rdlen, np.argmax(offset_tallies[rdlen-opts.minrdlen, :])))
+    for (i, offset) in enumerate(offsets):
+        # outfile.write('%d\t%d\n' % (rdlen, np.argmax(offset_tallies[rdlen-opts.minrdlen, :])))
+        outfile.write('%d\t%d\n' % (opts.minrdlen+i, offset))
 for inbam in inbams:
     inbam.close()
