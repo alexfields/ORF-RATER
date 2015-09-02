@@ -35,7 +35,7 @@ parser.add_argument('--stoprange', type=int, nargs=2, default=[7, 0],
                     help='Region around stop codon (in codons) to model explicitly. Ignored if reading metagene from file (Default: 7 0, meaning '
                          'seven full codons before and including the stop are modeled, but none after).')
 parser.add_argument('--mincdsreads', type=int, default=64,
-                    help='Minimum number of reads required within the body of the CDS (and any surrounding nucleotides indicated by STARTRANGE or '
+                    help='Minimum number of reads required within the body of the CDS (and any surrounding nlucleotides indicated by STARTRANGE or '
                          'STOPRANGE) for it to be included in the metagene. Ignored if reading metagene from file (Default: 64).')
 parser.add_argument('--startcount', type=int, default=0,
                     help='Minimum reads at putative translation initiation codon. Useful to reduce computational burden by only considering ORFs '
@@ -184,7 +184,7 @@ def regress_tfam(ORF_set):
         if ORF_set.empty:
             return failure_return
 
-    ORF_strength_df = ORF_set.sort('tcoord', ascending=False).drop_duplicates('ORF_name').reset_index()
+    ORF_strength_df = ORF_set.sort('tcoord', ascending=False).drop_duplicates('ORF_name').reset_index(drop=True)
     abort_set = ORF_set.drop_duplicates('gcoord').copy()
     abort_set['gstop'] = abort_set['gcoord']  # should maybe be +/-3, but then need to worry about splicing - and this is an easy flag
     abort_set['tstop'] = abort_set['tcoord']+3  # stop after the first codon
@@ -303,6 +303,8 @@ def regress_chrom(chrom_to_do):
     # Those ORFs would never get called anyway since they couldn't possibly have any reads at their start codon
     if chrom_ORFs.empty:
         return failure_return
+
+    chrom_ORFs = chrom_ORFs[chrom_ORFs['tfam'].isin(chrom_ORFs['tfam'].drop_duplicates().iloc[:10])]  # TESTING
 
     return [pd.concat(res_dfs) for res_dfs in zip(*[regress_tfam(tfam_set) for (tfam, tfam_set) in chrom_ORFs.groupby('tfam')])]
 
