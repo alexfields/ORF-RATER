@@ -28,8 +28,7 @@ parser.add_argument('--codons', nargs='+', default=['ATG'],
 # parser.add_argument('--extracdsbeds', nargs='+', help='Extra bed files containing additional annotated CDSs beyond (or instead of) those in inbed')
 # parser.add_argument('--ignoreannotations', action='store_true', help='If flag is set, CDS annotations in INBED will be ignored.')
 # ' Typically used in conjunction with --extracdsbeds')
-parser.add_argument('-p', '--numproc', type=int, default=1,
-                    help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
+parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 opts = parser.parse_args()
 
 for codon in opts.codons:

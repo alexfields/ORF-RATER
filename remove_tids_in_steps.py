@@ -43,8 +43,7 @@ parser.add_argument('--pseudofrac', type=float, default=1. / 3,
                          'Ignored if list of pseudogenes is not provided. (Default: 0.333)')
 parser.add_argument('--multiexcess', type=float, default=1. / 3,
                     help='Maximum disparity in multimapping reads versus multimapping positions for any transcript (Default: 0.333)')
-parser.add_argument('-p', '--numproc', type=int, default=1,
-                    help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
+parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 parser.add_argument('--keeptempfiles', action='store_true',
                     help='Keep the generated intermediate files (useful for debugging)')
 parser.add_argument('--logfile', help='Generate a log file to record progress and timing')
