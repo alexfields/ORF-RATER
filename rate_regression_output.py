@@ -7,6 +7,7 @@ import numpy as np
 from sklearn.grid_search import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from monotone import monotonic_regressor
+from sys import stderr
 
 parser = argparse.ArgumentParser()
 parser.add_argument('regressfile', nargs='+',
@@ -109,6 +110,7 @@ currgrid = GridSearchCV(RandomForestClassifier(n_estimators=opts.numtrees), para
                         scoring='accuracy', cv=opts.cvfold, n_jobs=opts.numproc)
 currgrid.fit(gold_feat, gold_class)
 if currgrid.best_params_['min_samples_leaf'] in (min(opts.minperleaf), max(opts.minperleaf)):
+    stderr.write('WARNING: Optimal minimum samples per leaf (%d) at boundary of search space; recommmended to search additional parameters')
 
 orfratings['forest_score'] = currgrid.best_estimator_.predict_proba(orfratings[feature_columns].values)[:, 1]
 
