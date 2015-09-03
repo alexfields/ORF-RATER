@@ -45,24 +45,21 @@ parser.add_argument('--pseudofrac', type=float, default=1./3, help='Maximum allo
                                                                    'Ignored if list of pseudogenes is not provided. (Default: 0.333)')
 parser.add_argument('--multiexcess', type=float, default=1./3,
                     help='Maximum disparity in multimapping reads versus multimapping positions for any transcript (Default: 0.333)')
-parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 parser.add_argument('--keeptempfiles', action='store_true', help='Keep the generated intermediate files (useful for debugging)')
-parser.add_argument('--logfile', help='Generate a log file to record progress and timing')
+parser.add_argument('-v', '--verbose', help='Output a log of progress and timing (printed to stdout)')
+# parser.add_argument('--logfile', help='Generate a log file to record progress and timing')
+parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()
 
 if not opts.force and os.path.exists(opts.outbed):
     raise IOError('%s exists; use --force to overwrite' % opts.outbed)
 
-if opts.logfile:
-    with open(opts.logfile, 'w') as logfile:
-        logfile.write(' '.join(sys.argv) + '\n')
-
+if opts.verbose:
+    sys.stdout.write(' '.join(sys.argv) + '\n')
 
     def logprint(nextstr):
-        with open(opts.logfile, 'a') as logfile:
-            logfile.write('[%s] %s\n' % (strftime('%Y-%m-%d %H:%M:%S'), nextstr))
-
+        sys.stdout.write('[%s] %s\n' % (strftime('%Y-%m-%d %H:%M:%S'), nextstr))
 
     logprint('Reading transcriptome and genome')
     log_lock = mp.Lock()
@@ -145,13 +142,13 @@ def _get_tid_info((chrom, strand)):
                                                           data_columns=True, complevel=1, complib='blosc')
     #    sp.call(['ptrepack', orig_store_name, seq_info_hdf%(chrom,strand)])  # repack for efficiency
     #    os.remove(orig_store_name)
-    if opts.logfile:
+    if opts.verbose:
         with log_lock:
             logprint('%s (%s strand) complete' % (chrom, strand))
     return tid_summary
 
 
-if opts.logfile:
+if opts.verbose:
     logprint('Parsing sequence and count information')
 
 workers = mp.Pool(opts.numproc)
@@ -196,13 +193,13 @@ def _find_mm_in_range(partnum):
     # sp.call(['ptrepack', outname_orig%partnum, outname%partnum])  # repack for efficiency
     # os.remove(outname_orig%partnum)
     mm_df = seq_df.groupby('tid').agg({'genpos': len, 'reads': np.sum})
-    if opts.logfile:
+    if opts.verbose:
         with log_lock:
             logprint('Partition %d of %d complete' % (partnum + 1, npart))
     return mm_df
 
 
-if opts.logfile:
+if opts.verbose:
     logprint('Partitioning sequences to identify multimappers')
 
 workers = mp.Pool(opts.numproc)
@@ -243,7 +240,7 @@ if pseudos.size > 0:
         return seq_df.groupby('tid').agg({'genpos': len, 'reads': np.sum})
 
 
-    if opts.logfile:
+    if opts.verbose:
         logprint('Recalculating multimappers after eliminating pseudogenes')
     workers = mp.Pool(opts.numproc)
     mm_df = workers.map(_find_kept_mm_in_range, range(npart))
@@ -280,5 +277,5 @@ with open(opts.outbed, 'w') as outbed:
     for (tid, chrom, strand) in tid_summary.loc[tid_summary['dropped'] == '', ['chrom', 'strand']].itertuples(True):
         outbed.write(bedlinedict[(chrom, strand)][tid])
 
-if opts.logfile:
+if opts.verbose:
     logprint('Tasks complete')

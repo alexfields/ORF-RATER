@@ -11,6 +11,8 @@ import numpy as np
 import multiprocessing as mp
 import subprocess as sp
 import os
+import sys
+from time import strftime
 
 parser = argparse.ArgumentParser(description='Identify all possible ORFs in a transcriptome. ORF-RATER will evaluate translation of only these ORFs.')
 parser.add_argument('genomefasta', help='Path to genome FASTA-file')
@@ -24,6 +26,7 @@ parser.add_argument('--inbed', default='transcripts.bed', help='Transcriptome BE
 parser.add_argument('--codons', nargs='+', default=['ATG'],
                     help='Codons to consider as possible translation initiation sites. All must be 3 nucleotides long. Standard IUPAC nucleotide '
                          'codes are recognized; for example, to query all NTG codons, one could input "NTG" or "ATG CTG GTG TTG" (Default: ATG)')
+parser.add_argument('-v', '--verbose', help='Output a log of progress and timing (printed to stdout)')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()
@@ -34,6 +37,15 @@ if not opts.force and os.path.exists(opts.orfstore):
 for codon in opts.codons:
     if len(codon) != 3 or any(x not in IUPAC_TABLE_DNA for x in codon.upper()):
         raise ValueError('%s is an invalid codon sequence' % codon)
+
+if opts.verbose:
+    sys.stdout.write(' '.join(sys.argv) + '\n')
+
+    def logprint(nextstr):
+        sys.stdout.write('[%s] %s\n' % (strftime('%Y-%m-%d %H:%M:%S'), nextstr))
+
+    logprint('Reading transcriptome and genome')
+
 START_RE = seq_to_regex('|'.join(opts.codons), nucleotide_table=IUPAC_TABLE_DNA)
 STOP_RE = re.compile(r'(?:...)*?(?:TAG|TAA|TGA)')
 
@@ -134,6 +146,8 @@ def identify_tfam_ORFs((tfam, tids)):
     else:
         return None
 
+if opts.verbose:
+    logprint('Identifying ORFs within each transcript family')
 
 workers = mp.Pool(opts.numproc)
 all_ORFs = pd.concat(workers.map(identify_tfam_ORFs, tfamtids.iteritems()), ignore_index=True)
@@ -142,7 +156,13 @@ workers.close()
 for catfield in ['chrom', 'strand', 'codon']:
     all_ORFs[catfield] = all_ORFs[catfield].astype('category')  # saves disk space and read/write time
 
+if opts.verbose:
+    logprint('Saving results')
+
 origname = opts.orfstore+'.tmp'
 all_ORFs.to_hdf(origname, 'all_ORFs', format='t', data_columns=True, complevel=1, complib='blosc')
 sp.call(['ptrepack', origname, opts.orfstore])  # repack for efficiency
 os.remove(origname)
+
+if opts.verbose:
+    logprint('Tasks complete')

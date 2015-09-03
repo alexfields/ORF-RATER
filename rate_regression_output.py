@@ -7,7 +7,8 @@ import numpy as np
 from sklearn.grid_search import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from monotone import monotonic_regressor
-from sys import stderr
+import sys
+from time import strftime
 
 parser = argparse.ArgumentParser()
 parser.add_argument('regressfile', nargs='+',
@@ -33,6 +34,7 @@ parser.add_argument('--outfile', default='orfratings.h5',
                     help='Filename to which to output the final rating for each ORF. Formatted as pandas HDF (table name is "orfratings"). Columns '
                          'include basic information, raw score from random forest, and final monotonized orf rating. For ORFs appearing on multiple '
                          'transcripts, only one transcript will be selected for the table. (Default: orfratings.h5)')
+parser.add_argument('-v', '--verbose', help='Output a log of progress and timing (printed to stdout)')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()
@@ -58,6 +60,14 @@ if opts.names:
     if len(opts.regressfile) != len(opts.names):
         raise ValueError('Precisely one name must be provided for each REGRESSFILE')
     colnames = opts.names
+
+if opts.verbose:
+    sys.stdout.write(' '.join(sys.argv) + '\n')
+
+    def logprint(nextstr):
+        sys.stdout.write('[%s] %s\n' % (strftime('%Y-%m-%d %H:%M:%S'), nextstr))
+
+    logprint('Loading regression output')
 
 allstarts = pd.DataFrame(columns=['tfam', 'chrom', 'gcoord', 'strand'])
 orf_columns = ['ORF_name', 'tfam', 'tid', 'tcoord', 'tstop', 'chrom', 'gcoord', 'gstop', 'strand', 'codon', 'AAlen']
@@ -99,22 +109,33 @@ stopgrps = orfratings.groupby(['chrom', 'gstop', 'strand'])
 for stopcol in stopcols:
     orfratings['stopset_rel_str_start_'+stopcol] = stopgrps['str_start_'+stopcol].transform(lambda x: x/x.max())
     feature_columns.append('stopset_rel_str_start_'+stopcol)
+
+if opts.verbose:
+    logprint('Training random forest on features:\n\t'+'\n\t'.join(feature_columns))
+
 if opts.goldallcodons:
     gold_set = (orfratings['AAlen'] >= opts.goldminlen)
 else:
     gold_set = ((orfratings['codon'] == 'ATG') & (orfratings['AAlen'] >= opts.goldminlen))
 gold_class = orfratings.loc[gold_set, ['annot_start', 'annot_stop']].all(1).values.astype(np.int8)*2 - 1  # convert True/False to +1/-1
 gold_feat = orfratings.loc[gold_set, feature_columns].values
-# cv = StratifiedKFold(gold_class, n_folds=opts.cvfold)
+
+if opts.verbose:
+    logprint('Gold set contains %d annotated ORFs and %d unannotated ORFs' % ((gold_class > 0).sum(), (gold_class < 0).sum()))
+
 currgrid = GridSearchCV(RandomForestClassifier(n_estimators=opts.numtrees), param_grid={'min_samples_leaf': opts.minperleaf},
                         scoring='accuracy', cv=opts.cvfold, n_jobs=opts.numproc)
 currgrid.fit(gold_feat, gold_class)
 if currgrid.best_params_['min_samples_leaf'] in (min(opts.minperleaf), max(opts.minperleaf)):
-    stderr.write('WARNING: Optimal minimum samples per leaf (%d) at boundary of search space; recommmended to search additional parameters')
+    sys.stderr.write('WARNING: Optimal minimum samples per leaf (%d) at boundary of search space; recommmended to search additional parameters')
 
 orfratings['forest_score'] = currgrid.best_estimator_.predict_proba(orfratings[feature_columns].values)[:, 1]
 
 to_monotonize = orfratings['forest_score'] > opts.minforestscore
+
+if opts.verbose:
+    logprint('Monotonizing %d ORFs' % to_monotonize.sum())
+
 forest_monoreg = monotonic_regressor()
 forest_monoreg.fit(orfratings.loc[to_monotonize, feature_columns].values,
                    orfratings.loc[to_monotonize, 'forest_score'].values,
@@ -122,4 +143,11 @@ forest_monoreg.fit(orfratings.loc[to_monotonize, feature_columns].values,
 
 orfratings['orfrating'] = np.nan
 orfratings.loc[to_monotonize, 'orfrating'] = forest_monoreg.predict_proba(orfratings.loc[to_monotonize, feature_columns].values)
+
+if opts.verbose:
+    logprint('Saving results')
+
 orfratings.to_hdf(opts.outfile, 'orfratings', format='t', data_columns=True)
+
+if opts.verbose:
+    logprint('Tasks complete')

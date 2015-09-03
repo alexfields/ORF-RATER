@@ -6,6 +6,7 @@ from yeti.genomics.roitools import SegmentChain, positionlist_to_segments
 from collections import defaultdict
 import os
 import sys
+from time import strftime
 
 parser = argparse.ArgumentParser(description='Identify overlapping transcripts from a bed file or STDIN, termed transcript families ("tfams"). Each '
                                              'tfam will be assigned a name, either based on the transcript IDs or from an optional gene name file. '
@@ -22,6 +23,7 @@ parser.add_argument('--inbed', default='transcripts.bed', help='Transcriptome BE
 parser.add_argument('--tfamstem', default='tfams', help='Output filestem. OUTSTEM.txt will be a tab-delimited file indicating which transcripts are '
                                                         'in which tfam. OUTSTEM.bed will be a bed file showing the genomic positions of each tfam. '
                                                         '(Default: tfams)')
+parser.add_argument('-v', '--verbose', help='Output a log of progress and timing (printed to stdout)')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()
 
@@ -32,6 +34,14 @@ if not opts.force:
         raise IOError('%s exists; use --force to overwrite' % outbedname)
     if os.path.exists(outtxtname):
         raise IOError('%s exists; use --force to overwrite' % outtxtname)
+
+if opts.verbose:
+    sys.stdout.write(' '.join(sys.argv) + '\n')
+
+    def logprint(nextstr):
+        sys.stdout.write('[%s] %s\n' % (strftime('%Y-%m-%d %H:%M:%S'), nextstr))
+
+    logprint('Identifying transcript overlaps')
 
 tfams = {}  # will contain integer keys to a tuple: ([list of tid],(chrom,strand),{set of gcoord})
 genlookup = defaultdict(dict)  # indexed by (chrom,strand) keys to an integer key to tfam
@@ -95,6 +105,8 @@ def choose_name(names):
         chosen = chosen.replace('/', '_')  # avoid sub-keying in h5py! Yes, this has happened!
     return chosen
 
+if opts.verbose:
+    logprint('Assigning names to transcript families')
 
 if opts.genenames:
     with open(opts.genenames, 'rU') as infile:
@@ -116,9 +128,16 @@ for tfam_val in tfams.itervalues():
     new_tfams[genename] = tfam_val
 for (genename, num_appearances) in multi_names.iteritems():
     sys.stderr.write('WARNING: Gene name %s appears %d independent times\n' % (genename, num_appearances))
+
+if opts.verbose:
+    logprint('Saving results')
+
 with open(outbedname, 'w') as outbed:
     with open(outtxtname, 'w') as outtxt:
         for tfam, (tids, (chrom, strand), genpos) in new_tfams.iteritems():
             outbed.write(SegmentChain(*positionlist_to_segments(chrom, strand, genpos), ID=tfam).as_bed())
             for tid in tids:
                 outtxt.write('%s\t%s\n' % (tid, tfam))
+
+if opts.verbose:
+    logprint('Tasks complete')

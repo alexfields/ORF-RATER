@@ -9,6 +9,7 @@ import numpy as np
 from yeti.genomics.genome_array import read_length_nmis
 import itertools
 import multiprocessing as mp
+from time import strftime
 
 parser = argparse.ArgumentParser(description='Find most common P-site offset for each read length in a ribosome profiling experiment. If multiple '
                                              'ribosome profiling datasets are to be analyzed separately (e.g. if they were collected under different '
@@ -35,6 +36,7 @@ parser.add_argument('--max5mis', type=int, default=1, help='Maximum 5\' mismatch
                                                            '(Default: 1)')
 parser.add_argument('--tallyfile', help='Optional output file for tallied offsets as a function of read length. First column indicates read length '
                                         'for that row; columns are different offset values, starting at 0.')
+parser.add_argument('-v', '--verbose', help='Output a log of progress and timing (printed to stdout)')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()
@@ -47,6 +49,14 @@ if opts.tallyfile:
     tallyfilename = os.path.join(opts.subdir, opts.tallyfile)
     if not opts.force and os.path.exists(tallyfilename):
         raise IOError('%s exists; use --force to overwrite' % tallyfilename)
+
+if opts.verbose:
+    sys.stdout.write(' '.join(sys.argv) + '\n')
+
+    def logprint(nextstr):
+        sys.stdout.write('[%s] %s\n' % (strftime('%Y-%m-%d %H:%M:%S'), nextstr))
+
+    logprint('Identifying reads near annotated translation start sites')
 
 inbams = [pysam.Samfile(infile, 'rb') for infile in opts.bamfiles]
 
@@ -108,6 +118,9 @@ workers.close()
 for inbam in inbams:
     inbam.close()
 
+if opts.verbose:
+    logprint('Saving results')
+
 if opts.tallyfile:
     with open(tallyfilename, 'w') as outfile:
         for rdlen in xrange(opts.minrdlen, opts.maxrdlen+1):
@@ -124,3 +137,6 @@ with open(outfilename, 'w') as outfile:
     for (i, offset) in enumerate(offsets):
         # outfile.write('%d\t%d\n' % (rdlen, np.argmax(offset_tallies[rdlen-opts.minrdlen, :])))
         outfile.write('%d\t%d\n' % (opts.minrdlen+i, offset))
+
+if opts.verbose:
+    logprint('Tasks complete')

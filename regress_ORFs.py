@@ -11,6 +11,8 @@ import scipy.sparse
 import multiprocessing as mp
 from yeti.genomics.genome_array import HashedReadBAMGenomeArray, ReadKeyMapFactory, read_length_nmis
 from yeti.genomics.roitools import SegmentChain, positionlist_to_segments
+import sys
+from time import strftime
 
 parser = argparse.ArgumentParser(description='Use linear regression to identify likely sites of translation. Regression will be performed for ORFs '
                                              'defined by find_ORFs.h5 using a metagene profile constructed from annotated CDSs identified by '
@@ -74,6 +76,7 @@ parser.add_argument('--metagenefile', default='metagene.txt',
                          'tab-delimited text, with position, readlength, value, and type ("START", "CDS", or "STOP"). If SUBDIR is set, this file '
                          'will be placed in that directory.')
 parser.add_argument('--noregress', action='store_true', help='Only generate a metagene (i.e. do not perform any regressions)')
+parser.add_argument('-v', '--verbose', help='Output a log of progress and timing (printed to stdout). Repeat for higher verbosity level.')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 parser.add_argument('-f', '--force', action='store_true',
                     help='Force file overwrite. This will overwrite both METAGENEFILE and REGRESSFILE, if they exist. To overwrite only REGRESSFILE '
@@ -103,6 +106,14 @@ if opts.restrictbystarts:
             restrictbystartfilenames.append(os.path.join(restrictbystart, opts.regressfile))
         else:
             raise IOError('Regression file/directory %s not found' % restrictbystart)
+
+if opts.verbose:
+    sys.stdout.write(' '.join(sys.argv) + '\n')
+
+    def logprint(nextstr):
+        sys.stdout.write('[%s] %s\n' % (strftime('%Y-%m-%d %H:%M:%S'), nextstr))
+
+    log_lock = mp.Lock()
 
 inbams = [pysam.Samfile(infile, 'rb') for infile in opts.bamfiles]
 
@@ -365,17 +376,25 @@ def regress_chrom(chrom_to_do):
         chrom_ORFs = chrom_ORFs.merge(restrictedstarts)  # inner merge acts as a filter
 
     if chrom_ORFs.empty:
+        if opts.verbose > 1:
+            logprint('No ORFs found on %s' % chrom_to_do)
         return failure_return
 
     chrom_ORFs = chrom_ORFs[chrom_ORFs['tfam'].isin(chrom_ORFs['tfam'].drop_duplicates().iloc[:10])]  # TESTING
 
-    return [pd.concat(res_dfs) for res_dfs in zip(*[regress_tfam(tfam_set) for (tfam, tfam_set) in chrom_ORFs.groupby('tfam')])]
+    res = tuple([pd.concat(res_dfs) for res_dfs in zip(*[regress_tfam(tfam_set) for (tfam, tfam_set) in chrom_ORFs.groupby('tfam')])])
+
+    if opts.verbose > 1:
+        logprint('%s complete' % chrom_to_do)
+
+    return res
 
 with pd.get_store(opts.orfstore, mode='r') as orfstore:
     chroms = orfstore.select('all_ORFs/meta/chrom/meta').values  # because saved as categorical, this is the list of all chromosomes
 
 if os.path.isfile(metafilename) and not opts.force:
-    # load metagene from file
+    if opts.verbose:
+        logprint('Loading metagene')
 
     metagene = pd.read_csv(metafilename, sep='\t').set_index(['region', 'position'])
     metagene.columns = metagene.columns.astype(int)  # they are read lengths
@@ -390,7 +409,8 @@ if os.path.isfile(metafilename) and not opts.force:
     cdsprof = cdsprof.values.T
     stopprof = stopprof.values.T
 else:
-    # calculate metagene from scratch and save it to file
+    if opts.verbose:
+        logprint('Calculating metagene')
 
     startnt = (-abs(opts.startrange[0])*3, abs(opts.startrange[1])*3)  # force <=0 and >= 0 for the bounds
     stopnt = (-abs(opts.stoprange[0])*3, abs(opts.stoprange[1])*3)
@@ -421,16 +441,22 @@ else:
         .to_csv(metafilename, sep='\t')
 
 if not opts.noregress:
+    if opts.verbose:
+        logprint('Calculating regression results by chromosome')
     workers = mp.Pool(opts.numproc)
     if opts.startonly:
         (ORF_strengths, start_strengths) = \
             [pd.concat(res_dfs).reset_index() for res_dfs in zip(*workers.map(regress_chrom, chroms))]
+        if opts.verbose:
+            logprint('Saving results')
         with pd.get_store(regressfilename, mode='w') as outstore:
             outstore.put('ORF_strengths', ORF_strengths, format='t', data_columns=True)
             outstore.put('start_strengths', start_strengths, format='t', data_columns=True)
     else:
         (ORF_strengths, start_strengths, stop_strengths) = \
             [pd.concat(res_dfs).reset_index() for res_dfs in zip(*workers.map(regress_chrom, chroms))]
+        if opts.verbose:
+            logprint('Saving results')
         with pd.get_store(regressfilename, mode='w') as outstore:
             outstore.put('ORF_strengths', ORF_strengths, format='t', data_columns=True)
             outstore.put('start_strengths', start_strengths, format='t', data_columns=True)
@@ -439,3 +465,6 @@ if not opts.noregress:
 
 for inbam in inbams:
     inbam.close()
+
+if opts.verbose:
+    logprint('Tasks complete')
