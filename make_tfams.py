@@ -18,7 +18,7 @@ parser.add_argument('-g', '--genenames', help='Path to file with gene name looku
                                               'one transcript ID followed by the corresponding gene name on each line. Gene names may be repeated, '
                                               'though assigning the same name to non-overlapping transcripts will trigger a warning. Not every '
                                               'transcript must be assigned a gene name. If no file is provided, or if no gene names are available '
-                                              'for any of the transcripts in a family, .')
+                                              'for any of the transcripts in a family, transcript IDs will be used as names.')
 parser.add_argument('--inbed', default='transcripts.bed', help='Transcriptome BED-file (Default: transcripts.bed)')
 parser.add_argument('--tfamstem', default='tfams', help='Output filestem. OUTSTEM.txt will be a tab-delimited file indicating which transcripts are '
                                                         'in which tfam. OUTSTEM.bed will be a bed file showing the genomic positions of each tfam. '
