@@ -14,40 +14,45 @@ import numpy as np
 import multiprocessing as mp
 from time import strftime
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--inbed', type=argparse.FileType('rU'), default=sys.stdin,
-                    help='Transcriptome BED-file (Default: stdin)')
+parser = argparse.ArgumentParser(description='Use ribosome profiling data to remove unwanted transcripts from a transcriptome. Transcripts will be '
+                                             'removed if they do not have enough reads of the desired length, if they have greater than some '
+                                             'fraction of their reads from a single position, if they are annotated as pseudogenes (and multimap '
+                                             'with another transcript), or if they have more multimapping reads beyond what would be expected based '
+                                             'on the number of multimapping positions. It is recommended that this file be run in an empty directory '
+                                             'and that OUTBED remain at the default value ("transcripts.bed") for consistency with later scripts.')
+parser.add_argument('--inbed', type=argparse.FileType('rU'), default=sys.stdin, help='Transcriptome BED-file (Default: stdin)')
 parser.add_argument('genomefasta', help='Path to genome FASTA-file')
-parser.add_argument('bamfiles', nargs='+',
-                    help='Path to transcriptome-aligned BAM file(s) to use for transcript filtering purposes')
-parser.add_argument('--outfile',
-                    help='Filename to use for tab-delimited text output (including column titles). First column is transcript IDs, '
+parser.add_argument('bamfiles', nargs='+', help='Path to transcriptome-aligned BAM file(s) to use for transcript filtering purposes. Alignment '
+                                                'should report all possible multimapping positions for each read. Ideally, should be ribosome '
+                                                'profiling data sets collected in the absence of initiation inhibitors (e.g. CHX or no drug).')
+parser.add_argument('--summarytable',
+                    help='Filename to use for (optional) tab-delimited text output (including column titles). First column is transcript IDs, '
                          'followed by summary information such as number of mappable positions and reads, maximum reads from any one position, '
-                         'and why the transcript was dropped (if it was dropped)')
-parser.add_argument('--outbed', type=argparse.FileType('w'), default=sys.stdout,
-                    help='File to which to output BED-formatted transcripts that passed all filters (Default: stdout)')
+                         'and why the transcript was dropped (if it was dropped).')
+parser.add_argument('--outbed', default='transcripts.bed',
+                    help='File to which to output BED-formatted transcripts that passed all filters (Default: transcripts.bed)')
 parser.add_argument('--minlen', type=int, default=29,
                     help='Minimum length of read to be considered when evaluating transcripts. '
                          'Also serves as the size of the segment when identifying multimapping positions. (Default: 29)')
 parser.add_argument('--maxlen', type=int, default=30,
                     help='Maximum length (inclusive) of read to be considered when evaluating transcripts. (Default: 30)')
-parser.add_argument('-r', '--minreads', type=int, default=64,
-                    help='Minimum number of reads demanded for each transcript (Default: 64)')
-parser.add_argument('-f', '--peakfrac', type=float, default=1. / 5,
+parser.add_argument('--minreads', type=int, default=64, help='Minimum number of reads demanded for each transcript (Default: 64)')
+parser.add_argument('--peakfrac', type=float, default=1./5,
                     help='Maximum fraction of a transcript\'s reads coming from any one position (Default: 0.2)')
-parser.add_argument('--pseudogenes',
-                    help='List of transcript IDs annotated as pseudogenes, one per line. To be removed if >PSEUDOFRAC fraction of reads mapping to '
-                         'each are multimappers.')
-parser.add_argument('--pseudofrac', type=float, default=1. / 3,
-                    help='Maximum allowable multimapping fraction of an annotated pseudogene\'s reads. '
-                         'Ignored if list of pseudogenes is not provided. (Default: 0.333)')
-parser.add_argument('--multiexcess', type=float, default=1. / 3,
+parser.add_argument('--pseudogenes', help='List of transcript IDs annotated as pseudogenes, one per line. To be removed if >PSEUDOFRAC fraction of '
+                                          'reads mapping to each are multimappers.')
+parser.add_argument('--pseudofrac', type=float, default=1./3, help='Maximum allowable multimapping fraction of an annotated pseudogene\'s reads. '
+                                                                   'Ignored if list of pseudogenes is not provided. (Default: 0.333)')
+parser.add_argument('--multiexcess', type=float, default=1./3,
                     help='Maximum disparity in multimapping reads versus multimapping positions for any transcript (Default: 0.333)')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
-parser.add_argument('--keeptempfiles', action='store_true',
-                    help='Keep the generated intermediate files (useful for debugging)')
+parser.add_argument('--keeptempfiles', action='store_true', help='Keep the generated intermediate files (useful for debugging)')
 parser.add_argument('--logfile', help='Generate a log file to record progress and timing')
+parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()
+
+if not opts.force and os.path.exists(opts.outbed):
+    raise IOError('%s exists; use --force to overwrite' % opts.outbed)
 
 if opts.logfile:
     with open(opts.logfile, 'w') as logfile:
@@ -71,7 +76,7 @@ if opts.pseudogenes:
 else:
     pseudotids = {}
 
-inbams = [pysam.Samfile(infile) for infile in opts.bamfiles]  # defaults to read mode, and will figure out if it's BAM or SAM
+inbams = [pysam.Samfile(infile, 'rb') for infile in opts.bamfiles]
 gnd = BAMGenomeArray(inbams, FivePrimeMapFactory(psite))
 # map to roughly the center of each read so that identical sequences that cross different splice sites
 # (on different transcripts) still end up mapping to the same place
@@ -266,14 +271,14 @@ if not opts.keeptempfiles:
 
 # Fraction of multimapped reads should be comparable to the fraction of multimapped positions
 # Significantly greater multimapped read fraction than position fraction suggests that the reads "belong" in the other place, not here
-# Really, should be doing a regression for the whole shebang - but that would be computationally challenging
+# Really, should be doing a regression for the whole shebang - but that would be a computational nightmare
 excess_mm = tid_info.index[(tid_info['reads_mm_frac'] > (tid_info['psite_mm_frac'] + opts.multiexcess))]
 tid_summary.loc[excess_mm, 'dropped'] = 'multi'
-if opts.outfile:
-    tid_summary.to_csv(opts.outfile, sep='\t')
-# with open(opts.outbed,'rU') as outbed:
-for (tid, chrom, strand) in tid_summary.loc[tid_summary['dropped'] == '', ['chrom', 'strand']].itertuples(True):
-    opts.outbed.write(bedlinedict[(chrom, strand)][tid])
+if opts.summarytable:
+    tid_summary.to_csv(opts.summarytable, sep='\t')
+with open(opts.outbed, 'w') as outbed:
+    for (tid, chrom, strand) in tid_summary.loc[tid_summary['dropped'] == '', ['chrom', 'strand']].itertuples(True):
+        outbed.write(bedlinedict[(chrom, strand)][tid])
 
 if opts.logfile:
     logprint('Tasks complete')
