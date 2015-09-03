@@ -60,6 +60,7 @@ if opts.verbose:
 
     def logprint(nextstr):
         sys.stdout.write('[%s] %s\n' % (strftime('%Y-%m-%d %H:%M:%S'), nextstr))
+        sys.stdout.flush()
 
     logprint('Reading transcriptome and genome')
     log_lock = mp.Lock()
