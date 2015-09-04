@@ -148,6 +148,8 @@ with open('%s.bed' % opts.tfamstem, 'rU') as tfambed:
 
 
 def _get_annotated_counts_by_chrom(chrom_to_do):
+    """Accumulate counts from annotated CDSs into a metagene profile. Only the longest CDS in each transcript family will be included, and only if it
+    meets the minimum number-of-reads requirement. Reads are normalized by gene, so every gene included contributes equally to the final metagene."""
     found_cds = pd.read_hdf(opts.cdsstore, 'found_cds', mode='r', where="chrom == '%s'" % chrom_to_do, columns=['orfname']) \
         .merge(pd.read_hdf(opts.orfstore, 'all_orfs', mode='r',
                            where="chrom == '%s' and tstop > 0 and tcoord > %d and AAlen > %d" % (chrom_to_do, -startnt[0], min_AAlen),
@@ -380,8 +382,6 @@ def _regress_chrom(chrom_to_do):
         if opts.verbose > 1:
             logprint('No ORFs found on %s' % chrom_to_do)
         return failure_return
-
-    chrom_orfs = chrom_orfs[chrom_orfs['tfam'].isin(chrom_orfs['tfam'].drop_duplicates().iloc[:10])]  # TESTING
 
     res = tuple([pd.concat(res_dfs) for res_dfs in zip(*[_regress_tfam(tfam_set) for (tfam, tfam_set) in chrom_orfs.groupby('tfam')])])
 
