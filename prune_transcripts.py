@@ -46,9 +46,9 @@ parser.add_argument('--pseudofrac', type=float, default=1./3, help='Maximum allo
 parser.add_argument('--multiexcess', type=float, default=1./3,
                     help='Maximum disparity in multimapping reads versus multimapping positions for any transcript (Default: 0.333)')
 parser.add_argument('--keeptempfiles', action='store_true', help='Keep the generated intermediate files (useful for debugging)')
-parser.add_argument('-v', '--verbose', action='store_true', help='Output a log of progress and timing (to stdout)')
-# parser.add_argument('--logfile', help='Generate a log file to record progress and timing')
-parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
+parser.add_argument('-v', '--verbose', action='count',
+                    help='Output a log of progress and timing (to stdout). Repeat for higher verbosity level.')
+parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but more recommended if available.')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()
 
@@ -107,6 +107,8 @@ seq_info_hdf = os.path.join(temp_folder, 'tid_seq_%s%s.h5')
 
 
 def _get_tid_info((chrom, strand)):
+    """For each transcript on this chromosome/strand, identifies every sub-sequence of the appropriate length (fpsize), converts it to an integer,
+    identifies the number of reads mapping to that position, and outputs all of that information to a pandas HDF store."""
     tid_seq_info = []
     tid_summary = pd.DataFrame(
         {'chrom': chrom, 'strand': strand, 'n_psite': -1, 'n_reads': -1, 'peak_reads': -1, 'dropped': ''},
@@ -143,7 +145,7 @@ def _get_tid_info((chrom, strand)):
                                                           data_columns=True, complevel=1, complib='blosc')
     #    sp.call(['ptrepack', orig_store_name, seq_info_hdf%(chrom,strand)])  # repack for efficiency
     #    os.remove(orig_store_name)
-    if opts.verbose:
+    if opts.verbose > 1:
         with log_lock:
             logprint('%s (%s strand) complete' % (chrom, strand))
     return tid_summary
@@ -174,6 +176,8 @@ outname = os.path.join(temp_folder, 'tid_seq_mm_part_%d.h5')
 
 
 def _find_mm_in_range(partnum):
+    """Using the pandas HDF stores saved by _get_tid_info(), this function partitions reads based on their starting sequence, to divide up the
+    problem of identifying multimapping positions. Each set of partitioned reads is saved to its own pandas HDF store."""
     seq_df = []
     for (chrom, strand) in bedlinedict.keys():
         fname = seq_info_hdf % (chrom, strand)
@@ -194,7 +198,7 @@ def _find_mm_in_range(partnum):
     # sp.call(['ptrepack', outname_orig%partnum, outname%partnum])  # repack for efficiency
     # os.remove(outname_orig%partnum)
     mm_df = seq_df.groupby('tid').agg({'genpos': len, 'reads': np.sum})
-    if opts.verbose:
+    if opts.verbose > 1:
         with log_lock:
             logprint('Partition %d of %d complete' % (partnum + 1, npart))
     return mm_df
@@ -232,6 +236,7 @@ if pseudos.size > 0:
 
 
     def _find_kept_mm_in_range(partnum):
+        """Load the multimapping positions on kept_tids from each partitioned dataframe"""
         seq_df = pd.read_hdf(outname % partnum, 'tid_seq_mm')
         seq_df = seq_df[seq_df['tid'].isin(kept_tids)]
         # Only care if the multimap is to a different genomic position
