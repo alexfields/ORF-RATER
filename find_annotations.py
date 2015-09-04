@@ -28,7 +28,7 @@ parser.add_argument('--ignoreannotations', action='store_true', help='If flag is
                                                                      'conjunction with --extracdsbeds')
 parser.add_argument('--extracdsbeds', nargs='+', help='Extra bed file(s) containing additional annotated CDSs beyond (or instead of) those in inbed. '
                                                       'If transcript names are repeated across these files, sources of annotated CDSs may become '
-                                                      'ambiguous, but no error or warning will be triggered.')
+                                                      'ambiguous, but no error or warning will be triggered. Requires pybedtools.')
 parser.add_argument('-v', '--verbose', action='count',
                     help='Output a log of progress and timing (to stdout). Repeat for higher verbosity level.')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but more recommended if available.')
