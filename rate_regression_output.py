@@ -70,9 +70,9 @@ if opts.verbose:
 
     logprint('Loading regression output')
 
-allstarts = pd.DataFrame(columns=['tfam', 'chrom', 'gcoord', 'strand'])
 orf_columns = ['ORF_name', 'tfam', 'tid', 'tcoord', 'tstop', 'chrom', 'gcoord', 'gstop', 'strand', 'codon', 'AAlen']
-allorfs = pd.DataFrame(columns=orf_columns)
+allstarts = pd.DataFrame(columns=['tfam', 'chrom', 'gcoord', 'strand'])
+allorfs = pd.DataFrame()
 allstops = pd.DataFrame(columns=['tfam', 'chrom', 'gstop', 'strand'])
 feature_columns = []
 stopcols = []
@@ -83,7 +83,7 @@ for (regressfile, colname) in zip(regressfiles, colnames):
             allstarts = allstarts.merge(instore.select('start_strengths', columns=['tfam', 'chrom', 'gcoord', 'strand', 'start_strength', 'W_start'])
                                         .rename(columns={'start_strength': 'str_start_'+colname,
                                                          'W_start': 'W_start_'+colname}), how='outer').fillna(0.)
-            allorfs = allorfs.append(instore.select('orf_strengths', columns=orf_columns), ignore_index=True).drop_duplicates('ORF_name')
+            allorfs = allorfs.append(instore.select('ORF_strengths', columns=orf_columns), ignore_index=True).drop_duplicates('ORF_name')
             # This line not actually used for regression output beyond just which ORFs actually got a positive score in at least one regression
             # Safer to use concatenation and drop_duplicates rather than outer merges, in case one ORF somehow was assigned to different transcripts
             allstops = allstops.merge(instore.select('stop_strengths', columns=['tfam', 'chrom', 'gcoord', 'strand', 'stop_strength', 'W_stop'])
@@ -99,7 +99,8 @@ found_cds = pd.read_hdf(opts.cdsstore, 'found_CDSs', mode='r', columns=['chrom',
 unfound_cds = pd.read_hdf(opts.cdsstore, 'unfound_CDSs', mode='r', columns=['chrom', 'gcoord', 'gstop', 'strand'])
 all_annot_cds = pd.concat((found_cds.drop('ORF_name', axis=1), unfound_cds))
 all_annot_cds['annot'] = True
-orfratings = allorfs.merge(allstarts, how='left').merge(allstops, how='left').fillna(0.) \
+orfratings = allorfs[allorfs['gcoord'] != allorfs['gstop']] \
+    .merge(allstarts, how='left').merge(allstops, how='left').fillna(0.) \
     .merge(all_annot_cds[['chrom', 'gcoord', 'strand', 'annot']].rename(columns={'annot': 'annot_start'}).drop_duplicates(),
            how='left').fillna({'annot_start': False}) \
     .merge(all_annot_cds[['chrom', 'gstop', 'strand', 'annot']].rename(columns={'annot': 'annot_stop'}).drop_duplicates(),
@@ -128,7 +129,8 @@ currgrid = GridSearchCV(RandomForestClassifier(n_estimators=opts.numtrees), para
                         scoring='accuracy', cv=opts.cvfold, n_jobs=opts.numproc)
 currgrid.fit(gold_feat, gold_class)
 if currgrid.best_params_['min_samples_leaf'] in (min(opts.minperleaf), max(opts.minperleaf)):
-    sys.stderr.write('WARNING: Optimal minimum samples per leaf (%d) at boundary of search space; recommmended to search additional parameters')
+    sys.stderr.write('WARNING: Optimal minimum samples per leaf (%d) at boundary of search space; '
+                     'recommended to search additional parameters\n' % currgrid.best_params_['min_samples_leaf'])
 
 orfratings['forest_score'] = currgrid.best_estimator_.predict_proba(orfratings[feature_columns].values)[:, 1]
 
