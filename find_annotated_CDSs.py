@@ -28,13 +28,14 @@ parser.add_argument('--ignoreannotations', action='store_true', help='If flag is
                                                                      'conjunction with --extracdsbeds')
 parser.add_argument('--extracdsbeds', nargs='+', help='Extra bed file(s) containing additional annotated CDSs beyond (or instead of) those in inbed. '
                                                       'If transcript names are repeated across these files, sources of annotated CDSs may become '
-                                                      'ambiguous, but it will not result in an error or warning.')
-parser.add_argument('-v', '--verbose', help='Output a log of progress and timing (printed to stdout). Repeat for higher verbosity level.')
+                                                      'ambiguous, but no error or warning will be triggered.')
+parser.add_argument('-v', '--verbose', action='count',
+                    help='Output a log of progress and timing (to stdout). Repeat for higher verbosity level.')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()
 
-if not opts.force and os.path.exists(opts.orfstore):
+if not opts.force and os.path.exists(opts.cdsstore):
     raise IOError('%s exists; use --force to overwrite' % opts.orfstore)
 
 if opts.verbose:

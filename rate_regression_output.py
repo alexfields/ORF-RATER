@@ -34,7 +34,7 @@ parser.add_argument('--outfile', default='orfratings.h5',
                     help='Filename to which to output the final rating for each ORF. Formatted as pandas HDF (table name is "orfratings"). Columns '
                          'include basic information, raw score from random forest, and final monotonized orf rating. For ORFs appearing on multiple '
                          'transcripts, only one transcript will be selected for the table. (Default: orfratings.h5)')
-parser.add_argument('-v', '--verbose', help='Output a log of progress and timing (printed to stdout)')
+parser.add_argument('-v', '--verbose', action='store_true', help='Output a log of progress and timing (to stdout)')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()

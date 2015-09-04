@@ -23,7 +23,7 @@ parser.add_argument('--inbed', default='transcripts.bed', help='Transcriptome BE
 parser.add_argument('--tfamstem', default='tfams', help='Output filestem. OUTSTEM.txt will be a tab-delimited file indicating which transcripts are '
                                                         'in which tfam. OUTSTEM.bed will be a bed file showing the genomic positions of each tfam. '
                                                         '(Default: tfams)')
-parser.add_argument('-v', '--verbose', help='Output a log of progress and timing (printed to stdout)')
+parser.add_argument('-v', '--verbose', action='store_true', help='Output a log of progress and timing (to stdout)')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()
 

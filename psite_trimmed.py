@@ -35,8 +35,8 @@ parser.add_argument('--maxrdlen', type=int, default=34, help='Maximum permitted 
 parser.add_argument('--max5mis', type=int, default=1, help='Maximum 5\' mismatches to trim. Reads with more than this number will be excluded. '
                                                            '(Default: 1)')
 parser.add_argument('--tallyfile', help='Optional output file for tallied offsets as a function of read length. First column indicates read length '
-                                        'for that row; columns are different offset values, starting at 0.')
-parser.add_argument('-v', '--verbose', help='Output a log of progress and timing (printed to stdout)')
+                                        'for that row; columns are different offset values, starting at 0. Will be placed in SUBDIR automatically.')
+parser.add_argument('-v', '--verbose', action='store_true', help='Output a log of progress and timing (to stdout)')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()
@@ -49,6 +49,9 @@ if opts.tallyfile:
     tallyfilename = os.path.join(opts.subdir, opts.tallyfile)
     if not opts.force and os.path.exists(tallyfilename):
         raise IOError('%s exists; use --force to overwrite' % tallyfilename)
+
+if not os.path.isdir(opts.subdir):
+    os.mkdir(opts.subdir)
 
 if opts.verbose:
     sys.stdout.write(' '.join(sys.argv) + '\n')

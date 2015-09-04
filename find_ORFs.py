@@ -21,12 +21,12 @@ parser.add_argument('--tfamstem', default='tfams', help='Transcript family infor
 parser.add_argument('--orfstore', default='orf.h5',
                     help='File to which to output the final table of identified ORFs. Will be formatted as a pandas HDF store (table name is '
                          '"all_ORFs"). Different columns of the table indicate various of each ORF, such as start codon, length, etc. '
-                         '(Default: orf.h5')
+                         '(Default: orf.h5)')
 parser.add_argument('--inbed', default='transcripts.bed', help='Transcriptome BED-file (Default: transcripts.bed)')
 parser.add_argument('--codons', nargs='+', default=['ATG'],
                     help='Codons to consider as possible translation initiation sites. All must be 3 nucleotides long. Standard IUPAC nucleotide '
                          'codes are recognized; for example, to query all NTG codons, one could input "NTG" or "ATG CTG GTG TTG" (Default: ATG)')
-parser.add_argument('-v', '--verbose', help='Output a log of progress and timing (printed to stdout)')
+parser.add_argument('-v', '--verbose', action='store_true', help='Output a log of progress and timing (to stdout)')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but recommended to use more (e.g. 12-16)')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()
@@ -161,7 +161,7 @@ if opts.verbose:
     logprint('Saving results')
 
 origname = opts.orfstore+'.tmp'
-all_ORFs.to_hdf(origname, 'all_ORFs', format='t', data_columns=True, complevel=1, complib='blosc')
+all_ORFs.to_hdf(origname, 'all_ORFs', format='t', data_columns=True)
 sp.call(['ptrepack', origname, opts.orfstore])  # repack for efficiency
 os.remove(origname)
 
