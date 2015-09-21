@@ -62,8 +62,6 @@ if opts.verbose:
 
     logprint('Identifying reads near annotated translation start sites')
 
-inbams = [pysam.Samfile(infile, 'rb') for infile in opts.bamfiles]
-
 gcoorddict = defaultdict(set)  # use sets to avoid repeating start codons
 for bedline in opts.cdsbed:
     ls = bedline.strip().split()
@@ -86,7 +84,7 @@ def _offset_to_gcoord(read, gcoord):
         return next((idx for (idx, pos) in enumerate(read.positions) if pos == gcoord), None)
 
 
-def _get_reads(chrom, strand, gcoord):
+def _get_reads(chrom, strand, gcoord, inbams):
     """Get all of the reads overlapping a specific genomic position"""
     if strand == '+':
         return itertools.ifilter(lambda rd: not rd.is_reverse,
@@ -102,12 +100,14 @@ def _get_reads(chrom, strand, gcoord):
 
 def _map_start_sites((chrom, strand)):
     """Tally reads by read length and offset from translation start sites, for a particular chromsome and strand. Each read contributes the same
-    amount, so """
+    amount, so a start position with more reads will contribute more than one with fewer"""
+
+    inbams = [pysam.Samfile(infile, 'rb') for infile in opts.bamfiles]
     # offset_tallies = np.zeros((opts.maxrdlen+1-opts.minrdlen, opts.maxrdlen))
     offset_tallies = np.zeros((opts.maxrdlen+1-opts.minrdlen, opts.maxrdlen), np.uint32)
     for gcoord in gcoorddict[(chrom, strand)]:
         # curr_tallies = np.zeros_like(offset_tallies, dtype=np.uint16)
-        for read in _get_reads(chrom, strand, gcoord):
+        for read in _get_reads(chrom, strand, gcoord, inbams):
             (rdlen, nmis) = read_length_nmis(read)
             if opts.minrdlen <= rdlen <= opts.maxrdlen and nmis <= opts.max5mis:
                 curr_offset = _offset_to_gcoord(read, gcoord)
@@ -117,14 +117,13 @@ def _map_start_sites((chrom, strand)):
         # nreads = curr_tallies.sum()
         # if nreads >= opts.minreads:
         #     offset_tallies += curr_tallies.astype(np.float64)/nreads
+    for inbam in inbams:
+        inbam.close()
     return offset_tallies
 
 workers = mp.Pool(opts.numproc)
 offset_tallies = sum(workers.map(_map_start_sites, gcoorddict.keys())).astype(np.float64)  # convert to float, or at least int64, for convolution
 workers.close()
-
-for inbam in inbams:
-    inbam.close()
 
 if opts.verbose:
     logprint('Saving results')

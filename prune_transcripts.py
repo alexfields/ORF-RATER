@@ -74,12 +74,6 @@ if opts.pseudogenes:
 else:
     pseudotids = {}
 
-inbams = [pysam.Samfile(infile, 'rb') for infile in opts.bamfiles]
-gnd = BAMGenomeArray(inbams, FivePrimeMapFactory(psite))
-# map to roughly the center of each read so that identical sequences that cross different splice sites
-# (on different transcripts) still end up mapping to the same place
-gnd.add_filter('size', SizeFilterFactory(opts.minlen, opts.maxlen))
-
 # Parse through all transcripts once to hash them by (chrom,strand) for easy reference later
 bedlinedict = defaultdict(dict)
 ntids = 0
@@ -109,6 +103,12 @@ seq_info_hdf = os.path.join(temp_folder, 'tid_seq_%s%s.h5')
 def _get_tid_info((chrom, strand)):
     """For each transcript on this chromosome/strand, identifies every sub-sequence of the appropriate length (fpsize), converts it to an integer,
     identifies the number of reads mapping to that position, and outputs all of that information to a pandas HDF store."""
+    inbams = [pysam.Samfile(infile, 'rb') for infile in opts.bamfiles]
+    gnd = BAMGenomeArray(inbams, FivePrimeMapFactory(psite))
+    # map to roughly the center of each read so that identical sequences that cross different splice sites
+    # (on different transcripts) still end up mapping to the same place
+    gnd.add_filter('size', SizeFilterFactory(opts.minlen, opts.maxlen))
+
     tid_seq_info = []
     tid_summary = pd.DataFrame(
         {'chrom': chrom, 'strand': strand, 'n_psite': -1, 'n_reads': -1, 'peak_reads': -1, 'dropped': ''},
@@ -148,6 +148,10 @@ def _get_tid_info((chrom, strand)):
     if opts.verbose > 1:
         with log_lock:
             logprint('%s (%s strand) complete' % (chrom, strand))
+
+    for inbam in inbams:
+        inbam.close()
+
     return tid_summary
 
 
@@ -157,9 +161,6 @@ if opts.verbose:
 workers = mp.Pool(opts.numproc)
 tid_summary = pd.concat(workers.map(_get_tid_info, bedlinedict.keys()))
 workers.close()
-
-for inbam in inbams:
-    inbam.close()
 
 min_numseq = 0
 max_numseq = 4 ** fpsize

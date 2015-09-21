@@ -53,13 +53,13 @@ parser.add_argument('--regressfile', default='regression.h5',
 parser.add_argument('--startonly', action='store_true', help='Toggle for datasets collected in the presence of initiation inhibitor (e.g. HARR, '
                                                              'LTM). If selected, "stop_strengths" will not be calculated or saved.')
 parser.add_argument('--startrange', type=int, nargs=2, default=[1, 50],
-                    help='Region around start codon (in codons) to model explicitly. Ignored if reading metagene from file (Default: 1 30, meaning '
+                    help='Region around start codon (in codons) to model explicitly. Ignored if reading metagene from file (Default: 1 50, meaning '
                          'one full codon before the start is modeled, as are the start codon and the 49 codons following it).')
 parser.add_argument('--stoprange', type=int, nargs=2, default=[7, 0],
                     help='Region around stop codon (in codons) to model explicitly. Ignored if reading metagene from file (Default: 7 0, meaning '
                          'seven full codons before and including the stop are modeled, but none after).')
 parser.add_argument('--mincdsreads', type=int, default=64,
-                    help='Minimum number of reads required within the body of the CDS (and any surrounding nlucleotides indicated by STARTRANGE or '
+                    help='Minimum number of reads required within the body of the CDS (and any surrounding nucleotides indicated by STARTRANGE or '
                          'STOPRANGE) for it to be included in the metagene. Ignored if reading metagene from file (Default: 64).')
 parser.add_argument('--startcount', type=int, default=0,
                     help='Minimum reads at putative translation initiation codon. Useful to reduce computational burden by only considering ORFs '
@@ -115,8 +115,6 @@ if opts.verbose:
 
     log_lock = mp.Lock()
 
-inbams = [pysam.Samfile(infile, 'rb') for infile in opts.bamfiles]
-
 rdlens = []
 Pdict = {}
 with open(offsetfilename, 'rU') as infile:
@@ -130,8 +128,6 @@ with open(offsetfilename, 'rU') as infile:
     # Pdict = {(ls[0], nmis): ls[1] for ls in [line.strip().split() for line in infile] if opts.maxrdlen >= ls[0] >= opts.minrdlen
     #          for nmis in range(opts.max5mis+1)}
 rdlens.sort()
-
-gnd = HashedReadBAMGenomeArray(inbams, ReadKeyMapFactory(Pdict, read_length_nmis))
 
 # hash transcripts by ID for easy reference later
 with open(opts.inbed, 'rU') as inbed:
@@ -159,6 +155,9 @@ def _get_annotated_counts_by_chrom(chrom_to_do):
     startprof = np.zeros((len(rdlens), startlen))
     cdsprof = np.zeros((len(rdlens), 3))
     stopprof = np.zeros((len(rdlens), stoplen))
+    inbams = [pysam.Samfile(infile, 'rb') for infile in opts.bamfiles]
+    gnd = HashedReadBAMGenomeArray(inbams, ReadKeyMapFactory(Pdict, read_length_nmis))
+
     for (tid, tcoord, tstop) in found_cds[['tid', 'tcoord', 'tstop']].itertuples(False):
         curr_trans = SegmentChain.from_bed(bedlinedict[tid])
         tlen = curr_trans.get_length()
@@ -176,6 +175,10 @@ def _get_annotated_counts_by_chrom(chrom_to_do):
                 cdsprof += curr_counts[:, startlen:cdslen-stoplen].reshape((len(rdlens), -1, 3)).mean(1)
                 stopprof += curr_counts[:, cdslen-stoplen:cdslen]
                 num_cds_incl += 1
+
+    for inbam in inbams:
+        inbam.close()
+
     return startprof, cdsprof, stopprof, num_cds_incl
 
 
@@ -211,7 +214,7 @@ else:
     failure_return = (pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
 
 
-def _regress_tfam(orf_set):
+def _regress_tfam(orf_set, gnd):
     """Performs non-negative least squares regression on all of the ORFs in a transcript family, using profiles constructed via _orf_profile()
     Also calculates Wald statistics for each orf and start codon, and for each stop codon if opts.startonly is False"""
     tfam = orf_set['tfam'].iat[0]
@@ -383,7 +386,13 @@ def _regress_chrom(chrom_to_do):
             logprint('No ORFs found on %s' % chrom_to_do)
         return failure_return
 
-    res = tuple([pd.concat(res_dfs) for res_dfs in zip(*[_regress_tfam(tfam_set) for (tfam, tfam_set) in chrom_orfs.groupby('tfam')])])
+    inbams = [pysam.Samfile(infile, 'rb') for infile in opts.bamfiles]
+    gnd = HashedReadBAMGenomeArray(inbams, ReadKeyMapFactory(Pdict, read_length_nmis))
+
+    res = tuple([pd.concat(res_dfs) for res_dfs in zip(*[_regress_tfam(tfam_set, gnd) for (tfam, tfam_set) in chrom_orfs.groupby('tfam')])])
+
+    for inbam in inbams:
+        inbam.close()
 
     if opts.verbose > 1:
         logprint('%s complete' % chrom_to_do)
@@ -463,9 +472,6 @@ if not opts.noregress:
             outstore.put('start_strengths', start_strengths, format='t', data_columns=True)
             outstore.put('stop_strengths', stop_strengths, format='t', data_columns=True)
     workers.close()
-
-for inbam in inbams:
-    inbam.close()
 
 if opts.verbose:
     logprint('Tasks complete')
