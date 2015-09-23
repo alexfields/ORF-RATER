@@ -158,6 +158,7 @@ def _identify_tfam_orfs((tfam, tids)):
                                                      ('AAlen', AAlens),
                                                      ('orfname', '')]))
     if any(x is not None for x in tfam_orfs):
+        orf_pos_dict = {}
         tfam_orfs = pd.concat(tfam_orfs, ignore_index=True)
         for ((gcoord, AAlen), gcoord_grp) in tfam_orfs.groupby(['gcoord', 'AAlen']):  # group by genomic start position and length
             if len(gcoord_grp) == 1:
@@ -166,14 +167,19 @@ def _identify_tfam_orfs((tfam, tids)):
                 orf_gcoords = np.vstack(np.flatnonzero(tmask[tidx_lookup[tid], :])[tcoord:tstop]
                                         for (tid, tcoord, tstop) in gcoord_grp[['tid', 'tcoord', 'tstop']].itertuples(False))
                 if (orf_gcoords == orf_gcoords[0, :]).all():  # all of the grouped ORFs are identical, so should receive the same name
-                    tfam_orfs.loc[gcoord_grp.index, 'orfname'] = _name_orf(tfam, gcoord, AAlen)
+                    orfname = _name_orf(tfam, gcoord, AAlen)
+                    tfam_orfs.loc[gcoord_grp.index, 'orfname'] = orfname
+                    orf_pos_dict[orfname] = tfam_genpos[orf_gcoords[0, :]]
                 else:
                     named_so_far = 0
                     unnamed = np.ones(len(gcoord_grp), dtype=np.bool)
                     basename = _name_orf(tfam, gcoord, AAlen)
                     while unnamed.any():
-                        identicals = (orf_gcoords == orf_gcoords[unnamed, :][0, :]).all(1)
-                        tfam_orfs.loc[gcoord_grp.index[identicals], 'orfname'] = '%s_%d' % (basename, named_so_far)
+                        next_gcoords = orf_gcoords[unnamed, :][0, :]
+                        identicals = (orf_gcoords == next_gcoords).all(1)
+                        orfname = '%s_%d' % (basename, named_so_far)
+                        tfam_orfs.loc[gcoord_grp.index[identicals], 'orfname'] = orfname
+                        orf_pos_dict[orfname] = tfam_genpos[next_gcoords]
                         unnamed[identicals] = False
                         named_so_far += 1
 
@@ -185,7 +191,7 @@ def _identify_tfam_orfs((tfam, tids)):
         if tfam in tfams_with_annots:
             cds_info = []
             all_annot_pos = set()
-            for (annot_tfam_lookup, annot_tid_lookup) in zip(annot_tfam_lookups, annot_tid_lookups):
+            for (annot_fidx, (annot_tfam_lookup, annot_tid_lookup)) in enumerate(zip(annot_tfam_lookups, annot_tid_lookups)):
                 if tfam in annot_tfam_lookup:
                     for (annot_tidx, annot_tid) in enumerate(annot_tfam_lookup[tfam]):
                         curr_trans = Transcript.from_bed(annot_tid_lookup[annot_tid])
@@ -196,20 +202,19 @@ def _identify_tfam_orfs((tfam, tids)):
                                 curr_gcoord = curr_trans.get_genomic_coordinate(curr_trans.cds_start)[1]
                                 curr_gstop = curr_trans.get_genomic_coordinate(curr_trans.cds_end - 1)[1] + (strand == '+') * 2 - 1
                                 in_tfam = curr_cds_pos_set.issubset(tfam_genpos)
-                                cds_info.append((curr_gcoord, curr_gstop, (curr_len-3)/3, in_tfam, curr_cds_pos_set))
+                                cds_info.append((curr_gcoord, curr_gstop, (curr_len-3)/3, in_tfam, annot_fidx, annot_tid, curr_cds_pos_set))
                                 all_annot_pos.update(curr_cds_pos_set)
             if cds_info:  # False means no annotated CDSs or none are multiples of 3 in length
-                cds_info = pd.DataFrame(cds_info, columns=['gcoord', 'gstop', 'AAlen', 'in_tfam', 'pos']) \
+                cds_info = pd.DataFrame(cds_info, columns=['gcoord', 'gstop', 'AAlen', 'in_tfam', 'annot_fidx', 'annot_tid', 'pos']) \
                     .groupby(['gcoord', 'gstop', 'AAlen', 'in_tfam'], as_index=False) \
                     .apply(lambda x: x if len(x) == 1 else x[[not any(pos == x['pos'].iat[j] for j in xrange(i))
                                                               for (i, pos) in enumerate(x['pos'])]]) \
-                    .reset_index(drop=True)
+                    .set_index(['annot_fidx', 'annot_tid'])
                 # this operation organizes cds_info into a dataframe and effectively drops duplicates
                 # pandas drop_duplicates() is incompatible with sets so have to do it this manual way
+                # the combination of annot_fidx (the number of the file if more than one annotation file provided) and annot_tid should be a unique ID
                 tfam_orfs['annot_start'] = tfam_orfs['gcoord'].isin(cds_info['gcoord'])
                 tfam_orfs['annot_stop'] = tfam_orfs['gstop'].isin(cds_info['gstop'])
-
-                orf_pos_dict = {}
 
                 def _get_orf_pos(orfname, tid=None, tcoord=None, tstop=None):
                     """Helper function that identifies the genomic coordinates of an ORF (in stranded order) and caches them by orfname"""
@@ -218,16 +223,21 @@ def _identify_tfam_orfs((tfam, tids)):
                     else:
                         if tid is None or tcoord is None or tstop is None:
                             (tid, tcoord, tstop) = tfam_orfs.loc[tfam_orfs['orfname'] == orfname, ['tid', 'tcoord', 'tstop']].iloc[0]
-                        res = SegmentChain.from_bed(bedlinedict[tid]).get_genomic_coordinate(np.arange(tcoord, tstop))[1]
+                        res = tfam_genpos[np.flatnonzero(tmask[tidx_lookup[tid], :])[tcoord:tstop]]
                         orf_pos_dict[orfname] = res
                         return res
 
                 # ANNOTATED and XISO
-                possible_annot = tfam_orfs.drop_duplicates('orfname').merge(cds_info[cds_info['in_tfam']])  # merges on gcoord, gstop, and len
-                for ((orfname, tid, tcoord, tstop), cds_pos_sets) in possible_annot.groupby(['orfname', 'tid', 'tcoord', 'tstop'])['pos']:
+                cds_info['found'] = False
+                possible_annot = tfam_orfs.drop_duplicates('orfname').merge(cds_info[cds_info['in_tfam']].reset_index())
+                # merges on gcoord, gstop, and len - need to reset_index to preserve annot_fidx and annot_tid
+                for ((orfname, tid, tcoord, tstop), cds_grp) in possible_annot.groupby(['orfname', 'tid', 'tcoord', 'tstop']):
                     orf_pos = _get_orf_pos(orfname, tid, tcoord, tstop)
-                    if any(cds_pos_set.issubset(orf_pos) for cds_pos_set in cds_pos_sets):
-                        tfam_orfs.loc[tfam_orfs['orfname'] == orfname, 'orftype'] = 'annotated'
+                    for (annot_fidx, annot_tid, cds_pos_set) in cds_grp[['annot_fidx', 'annot_tid', 'pos']].itertuples(False):
+                        if cds_pos_set.issubset(orf_pos):
+                            tfam_orfs.loc[tfam_orfs['orfname'] == orfname, 'orftype'] = 'annotated'
+                            cds_info.loc[(annot_fidx, annot_tid), 'found'] = True
+                            break
                     else:
                         tfam_orfs.loc[tfam_orfs['orfname'] == orfname, 'orftype'] = 'Xiso'  # matching start and stop but differing in between
                 tfam_orfs.loc[tfam_orfs['orfname'].isin(tfam_orfs[tfam_orfs['orftype'] == 'new']
@@ -249,9 +259,9 @@ def _identify_tfam_orfs((tfam, tids)):
                                                                                'orfname']), 'orftype'] = 'truncation'
                 # on the same transcript with an annotated CDS, with matching stop codon, initiating downstream - must be a truncation
                 # still some missing truncations, if the original CDS was not on a transcript in the present transcriptome
-                if opts.extracdsbeds:
+                if not cds_info['found'].all():
                     possible_truncs = tfam_orfs[tfam_orfs['orftype'] == 'new'].drop_duplicates('orfname') \
-                        .merge(cds_info[['gstop', 'pos', 'AAlen']], on='gstop', suffixes=('', '_annot'))
+                        .merge(cds_info.loc[~cds_info['found'], ['gstop', 'pos', 'AAlen']], on='gstop', suffixes=('', '_annot'))
                     possible_truncs = possible_truncs[possible_truncs['AAlen'] < possible_truncs['AAlen_annot']]
                     for ((orfname, tid, tcoord, tstop, gcoord), cds_pos_sets) in \
                             possible_truncs.groupby(['orfname', 'tid', 'tcoord', 'tstop', 'gcoord'])['pos']:
@@ -305,17 +315,21 @@ def _identify_tfam_orfs((tfam, tids)):
                 # ORFs completely contained within a CDS on the same transcript, and not containing any full codon overlaps, must be internal
                 # Still could be other ORFs internal to a CDS on a transcript not in the current transcriptome - need to check manually
 
-                if opts.extracdsbeds:
+                if not cds_info['found'].all():
                     for (orfname, gcoord, gstop) in \
                             tfam_orfs.loc[tfam_orfs['orftype'] == 'new', ['orfname', 'gcoord', 'gstop']].drop_duplicates('orfname').itertuples(False):
                         orf_pos = _get_orf_pos(orfname)  # should be cached by now
                         if strand == '-':
                             if any(cds_pos_set.issuperset(orf_pos) and all(pos in orf_pos for pos in cds_pos_set if gcoord >= pos > gstop)
-                                   for cds_pos_set in cds_info.loc[(cds_info['gcoord'] > gcoord) & (cds_info['gstop'] < gstop), 'pos']):
+                                   for cds_pos_set in cds_info.loc[(~cds_info['found'])
+                                                                   & (cds_info['gcoord'] > gcoord)
+                                                                   & (cds_info['gstop'] < gstop), 'pos']):
                                 tfam_orfs.loc[tfam_orfs['orfname'] == orfname, 'orftype'] = 'internal'
                         else:
                             if any(cds_pos_set.issuperset(orf_pos) and all(pos in orf_pos for pos in cds_pos_set if gcoord <= pos < gstop)
-                                   for cds_pos_set in cds_info.loc[(cds_info['gcoord'] < gcoord) & (cds_info['gstop'] > gstop), 'pos']):
+                                   for cds_pos_set in cds_info.loc[(~cds_info['found'])
+                                                                   & (cds_info['gcoord'] < gcoord)
+                                                                   & (cds_info['gstop'] > gstop), 'pos']):
                                 tfam_orfs.loc[tfam_orfs['orfname'] == orfname, 'orftype'] = 'internal'
 
                 # STOP_OVERLAP
@@ -326,21 +340,23 @@ def _identify_tfam_orfs((tfam, tids)):
                 # starts within a CDS and not an internal - must be a stop_overlap
                 # again need to check manually for unfounds
 
-                if opts.extracdsbeds:
+                if not cds_info['found'].all():
                     for (orfname, gcoord, gstop) in \
                             tfam_orfs.loc[tfam_orfs['orftype'] == 'new', ['orfname', 'gcoord', 'gstop']].drop_duplicates('orfname').itertuples(False):
                         orf_pos = _get_orf_pos(orfname)  # should be cached by now
                         if strand == '-':
                             if any(all(pos in cds_pos_set for pos in orf_pos if pos > annot_gstop) and
                                    all(pos in orf_pos for pos in cds_pos_set if pos <= gcoord) for (annot_gstop, cds_pos_set) in
-                                   cds_info.loc[(cds_info['gcoord'] > gcoord)
+                                   cds_info.loc[(~cds_info['found'])
+                                                & (cds_info['gcoord'] > gcoord)
                                                 & (cds_info['gstop'] > gstop)
                                                 & (cds_info['gstop'] < gcoord), ['gstop', 'pos']].itertuples(False)):
                                 tfam_orfs.loc[tfam_orfs['orfname'] == orfname, 'orftype'] = 'stop_overlap'
                         else:
                             if any(all(pos in cds_pos_set for pos in orf_pos if pos < annot_gstop) and
                                    all(pos in orf_pos for pos in cds_pos_set if pos >= gcoord) for (annot_gstop, cds_pos_set) in
-                                   cds_info.loc[(cds_info['gcoord'] < gcoord)
+                                   cds_info.loc[(~cds_info['found'])
+                                                & (cds_info['gcoord'] < gcoord)
                                                 & (cds_info['gstop'] < gstop)
                                                 & (cds_info['gstop'] > gcoord), ['gstop', 'pos']].itertuples(False)):
                                 tfam_orfs.loc[tfam_orfs['orfname'] == orfname, 'orftype'] = 'stop_overlap'
@@ -353,21 +369,23 @@ def _identify_tfam_orfs((tfam, tids)):
                 # ends within a CDS and not an internal - must be a start_overlap
                 # again need to check manually for unfounds
 
-                if opts.extracdsbeds:
+                if not cds_info['found'].all():
                     for (orfname, gcoord, gstop) in \
                             tfam_orfs.loc[tfam_orfs['orftype'] == 'new', ['orfname', 'gcoord', 'gstop']].drop_duplicates('orfname').itertuples(False):
                         orf_pos = _get_orf_pos(orfname)  # should be cached by now
                         if strand == '-':
                             if any(all(pos in cds_pos_set for pos in orf_pos if pos <= annot_gcoord) and
                                    all(pos in orf_pos for pos in cds_pos_set if pos > gstop) for (annot_gcoord, cds_pos_set) in
-                                   cds_info.loc[(cds_info['gcoord'] < gcoord)
+                                   cds_info.loc[(~cds_info['found'])
+                                                & (cds_info['gcoord'] < gcoord)
                                                 & (cds_info['gstop'] < gstop)
                                                 & (cds_info['gcoord'] > gstop), ['gcoord', 'pos']].itertuples(False)):
                                 tfam_orfs.loc[tfam_orfs['orfname'] == orfname, 'orftype'] = 'start_overlap'
                         else:
                             if any(all(pos in cds_pos_set for pos in orf_pos if pos >= annot_gcoord) and
                                    all(pos in orf_pos for pos in cds_pos_set if pos < gstop) for (annot_gcoord, cds_pos_set) in
-                                   cds_info.loc[(cds_info['gcoord'] > gcoord)
+                                   cds_info.loc[(~cds_info['found'])
+                                                & (cds_info['gcoord'] > gcoord)
                                                 & (cds_info['gstop'] > gstop)
                                                 & (cds_info['gcoord'] < gstop), ['gcoord', 'pos']].itertuples(False)):
                                 tfam_orfs.loc[tfam_orfs['orfname'] == orfname, 'orftype'] = 'start_overlap'
