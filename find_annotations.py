@@ -27,16 +27,19 @@ parser.add_argument('--inbed', default='transcripts.bed', help='Transcriptome BE
 parser.add_argument('--ignoreannotations', action='store_true', help='If flag is set, CDS annotations in INBED will be ignored. Typically used in '
                                                                      'conjunction with --extracdsbeds')
 parser.add_argument('--extracdsbeds', nargs='+', help='Extra bed file(s) containing additional annotated CDSs beyond (or instead of) those in inbed. '
-                                                      'If transcript names are repeated across these files, sources of annotated CDSs may become '
-                                                      'ambiguous, but no error or warning will be triggered. Requires pybedtools.')
-parser.add_argument('-v', '--verbose', action='count',
-                    help='Output a log of progress and timing (to stdout). Repeat for higher verbosity level.')
+                                                      'If intending to run orf_types.py, transcript names must not be repeated. Requires pybedtools.')
+parser.add_argument('--orftypestore', default='orftype.h5', help='File to which to output table with ORF type information, formatted as pandas HDF '
+                                                                 'store (table name is "orftype"). (Default: orftype.h5)')
+parser.add_argument('-v', '--verbose', action='count', help='Output a log of progress and timing (to stdout). Repeat for higher verbosity level.')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but more recommended if available.')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()
 
-if not opts.force and os.path.exists(opts.cdsstore):
-    raise IOError('%s exists; use --force to overwrite' % opts.orfstore)
+if not opts.force:
+    if os.path.exists(opts.cdsstore):
+        raise IOError('%s exists; use --force to overwrite' % opts.cdsstore)
+    if os.path.exists(opts.orftypestore):
+        raise IOError('%s exists; use --force to overwrite' % opts.orftypestore)
 
 if opts.verbose:
     sys.stdout.write(' '.join(sys.argv) + '\n')
@@ -129,14 +132,16 @@ def _find_annots(tfam, tfam_orfs):
                                                  curr_gstop,
                                                  strand,
                                                  len(curr_cds_pos)/3-1))
-    return (pd.DataFrame(found_cds_info, columns=['tfam', 'tid', 'chrom', 'gcoord', 'gstop', 'strand', 'AAlen', 'orfname']),
-            pd.DataFrame(unfound_cds_info, columns=['tfam', 'tid', 'chrom', 'gcoord', 'gstop', 'strand', 'AAlen']))
+    tfam_found_cds = pd.DataFrame(found_cds_info, columns=['tfam', 'tid', 'chrom', 'gcoord', 'gstop', 'strand', 'AAlen', 'orfname'])
+    tfam_unfound_cds = pd.DataFrame(unfound_cds_info, columns=['tfam', 'tid', 'chrom', 'gcoord', 'gstop', 'strand', 'AAlen'])
+
+    return tfam_found_cds, tfam_unfound_cds
 
 
 def _find_annots_by_chrom(chrom_to_do):
     """Identify annotated CDSs on all of the transcripts on a given chromosome"""
     named_orfs = pd.read_hdf(opts.orfstore, 'all_orfs', where="chrom == '%s' and tstop > 0" % chrom_to_do,
-                             mode='r', columns=['tfam', 'tmap', 'tid', 'tcoord', 'tstop', 'chrom', 'gcoord', 'gstop', 'strand', 'orfname']) \
+                             mode='r', columns=['tfam', 'tid', 'tcoord', 'tstop', 'chrom', 'gcoord', 'gstop', 'strand', 'orfname']) \
         .drop_duplicates('orfname')
     named_orfs = named_orfs[named_orfs['tfam'].isin(tfams_with_annots)]  # don't bother looking if there aren't any annotated CDSs to be found
     if not named_orfs.empty:

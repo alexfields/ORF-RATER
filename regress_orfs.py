@@ -74,8 +74,7 @@ parser.add_argument('--metagenefile', default='metagene.txt',
                          'tab-delimited text, with position, readlength, value, and type ("START", "CDS", or "STOP"). If SUBDIR is set, this file '
                          'will be placed in that directory.')
 parser.add_argument('--noregress', action='store_true', help='Only generate a metagene (i.e. do not perform any regressions)')
-parser.add_argument('-v', '--verbose', action='count',
-                    help='Output a log of progress and timing (to stdout). Repeat for higher verbosity level.')
+parser.add_argument('-v', '--verbose', action='count', help='Output a log of progress and timing (to stdout). Repeat for higher verbosity level.')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but more recommended if available.')
 parser.add_argument('-f', '--force', action='store_true',
                     help='Force file overwrite. This will overwrite both METAGENEFILE and REGRESSFILE, if they exist. To overwrite only REGRESSFILE '

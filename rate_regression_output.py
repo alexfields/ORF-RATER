@@ -88,7 +88,7 @@ for (regressfile, colname) in zip(regressfiles, colnames):
             allorfs = allorfs.append(instore.select('orf_strengths', columns=orf_columns), ignore_index=True).drop_duplicates('orfname')
             # This line not actually used for regression output beyond just which ORFs actually got a positive score in at least one regression
             # Safer to use concatenation and drop_duplicates rather than outer merges, in case one ORF somehow was assigned to different transcripts
-            allstops = allstops.merge(instore.select('stop_strengths', columns=['tfam', 'chrom', 'gcoord', 'strand', 'stop_strength', 'W_stop'])
+            allstops = allstops.merge(instore.select('stop_strengths', columns=['tfam', 'chrom', 'gstop', 'strand', 'stop_strength', 'W_stop'])
                                       .rename(columns={'stop_strength': 'str_stop_'+colname,
                                                        'W_stop': 'W_stop_'+colname}), how='outer').fillna(0.)
             feature_columns.extend(['W_start_'+colname, 'W_stop_'+colname, 'str_stop_'+colname])
