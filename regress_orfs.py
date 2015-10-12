@@ -9,8 +9,8 @@ import numpy as np
 from scipy.optimize import nnls
 import scipy.sparse
 import multiprocessing as mp
-from yeti.genomics.genome_array import HashedReadBAMGenomeArray, ReadKeyMapFactory, read_length_nmis
-from yeti.genomics.roitools import SegmentChain, positionlist_to_segments
+from hashed_read_genome_array import HashedReadBAMGenomeArray, ReadKeyMapFactory, read_length_nmis, get_hashed_counts
+from plastid.genomics.roitools import SegmentChain, positionlist_to_segments
 import sys
 from time import strftime
 
@@ -43,7 +43,9 @@ parser.add_argument('--offsetfile', default='offsets.txt',
                     help='Path to 2-column tab-delimited file with 5\' offsets for variable P-site mappings. First column indicates read length, '
                          'second column indicates offset to apply. Read lengths are calculated after trimming up to MAX5MIS 5\' mismatches. Accepted '
                          'read lengths are defined by those present in the first column of this file. If SUBDIR is set, this file is assumed to be '
-                         'in that directory.')
+                         'in that directory. (Default: offsets.txt)')
+parser.add_argument('--max5mis', type=int, default=1, help='Maximum 5\' mismatches to trim. Reads with more than this number will be excluded.'
+                                                           '(Default: 1)')
 parser.add_argument('--regressfile', default='regression.h5',
                     help='Filename to which to output the table of regression scores for each ORF. Formatted as pandas HDF (tables generated include '
                          '"start_strengths", "orf_strengths", and "stop_strengths"). If SUBDIR is set, this file will be placed in that directory. '
@@ -62,8 +64,6 @@ parser.add_argument('--mincdsreads', type=int, default=64,
 parser.add_argument('--startcount', type=int, default=0,
                     help='Minimum reads at putative translation initiation codon. Useful to reduce computational burden by only considering ORFs '
                          'with e.g. at least 1 read at the start. (Default: 0)')
-parser.add_argument('--max5mis', type=int, default=1, help='Maximum 5\' mismatches to trim. Reads with more than this number will be excluded.'
-                                                           '(Default: 1)')
 parser.add_argument('--metagenefile', default='metagene.txt',
                     help='File to save metagene profile, OR if the file already exists, it will be used as the input metagene. Formatted as '
                          'tab-delimited text, with position, readlength, value, and type ("START", "CDS", or "STOP"). If SUBDIR is set, this file '
@@ -156,7 +156,7 @@ def _get_annotated_counts_by_chrom(chrom_to_do):
         curr_trans = SegmentChain.from_bed(bedlinedict[tid])
         tlen = curr_trans.get_length()
         if tlen >= tstop + stopnt[1]:  # need to guarantee that the 3' UTR is sufficiently long
-            curr_hashed_counts = curr_trans.get_hashed_counts(gnd)
+            curr_hashed_counts = get_hashed_counts(curr_trans, gnd)
             cdslen = tstop+stopnt[1]-tcoord-startnt[0]  # cds length, plus the extra bases...
             curr_counts = np.zeros((len(rdlens), cdslen))
             for (i, rdlen) in enumerate(rdlens):
@@ -224,14 +224,14 @@ def _regress_tfam(orf_set, gnd):
         tlens[tid] = len(curr_pos_set)
         tid_genpos[tid] = curr_pos_set
         all_tfam_genpos.update(curr_pos_set)
-    tfam_segs = SegmentChain(*positionlist_to_segments(chrom, strand, all_tfam_genpos))
+    tfam_segs = SegmentChain(*positionlist_to_segments(chrom, strand, list(all_tfam_genpos)))
     all_tfam_genpos = np.array(sorted(all_tfam_genpos))
     if strand == '-':
         all_tfam_genpos = all_tfam_genpos[::-1]
     nnt = len(all_tfam_genpos)
     tid_indices = {tid: np.flatnonzero(np.in1d(all_tfam_genpos, list(curr_tid_genpos), assume_unique=True))
                    for (tid, curr_tid_genpos) in tid_genpos.iteritems()}
-    hashed_counts = tfam_segs.get_hashed_counts(gnd)
+    hashed_counts = get_hashed_counts(tfam_segs, gnd)
     counts = np.zeros((len(rdlens), nnt), dtype=np.float64)  # even though they are integer-valued, will need to do float arithmetic
     for (i, rdlen) in enumerate(rdlens):
         for nmis in range(1+opts.max5mis):
@@ -261,7 +261,7 @@ def _regress_tfam(orf_set, gnd):
         orf_strength_df = pd.concat((orf_strength_df, stop_set), ignore_index=True)
     orf_profs = []
     indices = []
-    for (orf_num, tid, tcoord, tstop) in orf_strength_df[['tid', 'tcoord', 'tstop']].itertuples(True):  # index is 0, 1, 2, ...
+    for (tid, tcoord, tstop) in orf_strength_df[['tid', 'tcoord', 'tstop']].itertuples(False):
         if tcoord != tstop:  # not a histop
             tlen = tlens[tid]
             if tcoord+startnt[0] < 0:
@@ -442,6 +442,8 @@ else:
                             columns=pd.Index(rdlens, name='rdlen')))) \
         .to_csv(metafilename, sep='\t')
 
+catfields = ['chrom', 'strand', 'codon', 'orftype']
+
 if not opts.noregress:
     if opts.verbose:
         logprint('Calculating regression results by chromosome')
@@ -451,6 +453,11 @@ if not opts.noregress:
             [pd.concat(res_dfs).reset_index() for res_dfs in zip(*workers.map(_regress_chrom, chroms))]
         if opts.verbose:
             logprint('Saving results')
+        for catfield in catfields:
+            if catfield in start_strengths.columns:
+                start_strengths[catfield] = start_strengths[catfield].astype('category')  # saves disk space and read/write time
+            if catfield in orf_strengths.columns:
+                orf_strengths[catfield] = orf_strengths[catfield].astype('category')  # saves disk space and read/write time
         with pd.get_store(regressfilename, mode='w') as outstore:
             outstore.put('orf_strengths', orf_strengths, format='t', data_columns=True)
             outstore.put('start_strengths', start_strengths, format='t', data_columns=True)
@@ -459,6 +466,13 @@ if not opts.noregress:
             [pd.concat(res_dfs).reset_index() for res_dfs in zip(*workers.map(_regress_chrom, chroms))]
         if opts.verbose:
             logprint('Saving results')
+        for catfield in catfields:
+            if catfield in start_strengths.columns:
+                start_strengths[catfield] = start_strengths[catfield].astype('category')  # saves disk space and read/write time
+            if catfield in orf_strengths.columns:
+                orf_strengths[catfield] = orf_strengths[catfield].astype('category')  # saves disk space and read/write time
+            if catfield in stop_strengths.columns:
+                stop_strengths[catfield] = stop_strengths[catfield].astype('category')  # saves disk space and read/write time
         with pd.get_store(regressfilename, mode='w') as outstore:
             outstore.put('orf_strengths', orf_strengths, format='t', data_columns=True)
             outstore.put('start_strengths', start_strengths, format='t', data_columns=True)

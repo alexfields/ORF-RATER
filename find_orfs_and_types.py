@@ -2,8 +2,7 @@
 
 import argparse
 from Bio import SeqIO
-from yeti.genomics.seqtools import seq_to_regex, IUPAC_TABLE_DNA
-from yeti.genomics.roitools import Transcript, SegmentChain
+from plastid.genomics.roitools import Transcript, SegmentChain
 import re
 from collections import defaultdict
 import pandas as pd
@@ -39,6 +38,22 @@ opts = parser.parse_args()
 if not opts.force and os.path.exists(opts.orfstore):
     raise IOError('%s exists; use --force to overwrite' % opts.orfstore)
 
+IUPAC_TABLE_DNA = {"A": "A",
+                   "C": "C",
+                   "T": "T",
+                   "G": "G",
+                   "N": ("A", "C", "T", "G"),
+                   "R": ("A", "G"),     # puRines
+                   "Y": ("C", "T"),     # pYrimidines
+                   "S": ("G", "C"),     # Strong binding
+                   "W": ("A", "T"),     # Weak binding
+                   "K": ("G", "T"),
+                   "M": ("A", "C"),
+                   "B": ("C", "G", "T"),
+                   "D": ("A", "G", "T"),
+                   "H": ("A", "C", "T"),
+                   "V": ("A", "C", "G")}
+
 for codon in opts.codons:
     if len(codon) != 3 or any(x not in IUPAC_TABLE_DNA for x in codon.upper()):
         raise ValueError('%s is an invalid codon sequence' % codon)
@@ -51,6 +66,44 @@ if opts.verbose:
         sys.stdout.flush()
 
     logprint('Reading transcriptome and genome')
+
+
+def seq_to_regex(inp, flags=0, nucleotide_table=IUPAC_TABLE_DNA):
+    """Convert a nucleotide sequence of IUPAC nucleotide characters as a regular expression.
+    Ambiguous IUPAC characters are converted to groups (e.g. `'Y'` to `'[CTU]'`),
+    and T and U are considered equivalent.
+
+    Modified from the function in plastid.genomics.seqtools
+
+    Parameters
+    ----------
+    inp : str
+        Nucleotide sequence using IUPAC nucleotide codes
+
+    flags : int, optional
+        Flags to pass to :py:func:`re.compile` (Default: 0 / no flags)
+
+    Examples
+    --------
+    Convert a sequence to a regex::
+
+        >>> seq_to_regex("CARYYA").pattern
+        'CA[AG][CTU][CTU]A'
+
+
+    Returns
+    -------
+    :py:class:`re.RegexObject`
+        Regular expression pattern corresponding to IUPAC sequence in `inp`
+    """
+    out = []
+    for ch in inp.upper():
+        if len(nucleotide_table.get(ch, ch)) == 1:
+            out.append(ch)
+        else:
+            out.append("["+"".join(nucleotide_table.get(ch, ch))+"]")
+
+    return re.compile("".join(out), flags=flags)
 
 START_RE = seq_to_regex('|'.join(opts.codons), nucleotide_table=IUPAC_TABLE_DNA)
 STOP_RE = re.compile(r'(?:...)*?(?:TAG|TAA|TGA)')
@@ -123,28 +176,31 @@ def _identify_tfam_orfs((tfam, tids)):
     currtfam = SegmentChain.from_bed(tfambedlines[tfam])
     chrom = currtfam.chrom
     strand = currtfam.strand
-    tfam_genpos = np.array(currtfam.get_position_list(stranded=True))
+    tfam_genpos = np.array(currtfam.get_position_list())
+    if strand == '-':
+        tfam_genpos = tfam_genpos[::-1]
     tmask = np.empty((len(tids), len(tfam_genpos)), dtype=np.bool)  # True if transcript covers that position, False if not
     tfam_orfs = []
     tidx_lookup = {}
     for tidx, tid in enumerate(tids):
         tidx_lookup[tid] = tidx
         curr_trans = Transcript.from_bed(bedlinedict[tid])
-        tmask[tidx, :] = np.in1d(tfam_genpos, curr_trans.get_position_list(stranded=True), assume_unique=True)
+        tmask[tidx, :] = np.in1d(tfam_genpos, curr_trans.get_position_list(), assume_unique=True)
         trans_orfs = _find_all_orfs(curr_trans.get_sequence(genome).upper())
         if trans_orfs:
             (startpos, stoppos, codons) = zip(*trans_orfs)
-            startpos = np.array(startpos)
-            stoppos = np.array(stoppos)
+            startpos = np.array(startpos, dtype='i4')
+            stoppos = np.array(stoppos, dtype='i4')
 
-            gcoords = np.array(curr_trans.get_genomic_coordinate(startpos)[1], dtype='u4')
+            gcoords = np.array([curr_trans.get_genomic_coordinate(x)[1] for x in startpos], dtype='i4')
 
             stop_present = (stoppos > 0)
-            gstops = np.zeros(len(trans_orfs), dtype='u4')
-            gstops[stop_present] = curr_trans.get_genomic_coordinate(stoppos[stop_present] - 1)[1] + (strand == '+')*2 - 1
+            gstops = np.zeros(len(trans_orfs), dtype='i4')
+            gstops[stop_present] = \
+                np.array([curr_trans.get_genomic_coordinate(x - 1)[1] for x in stoppos[stop_present]]) + (1 if strand == '+' else -1)
             # the decrementing/incrementing stuff preserves half-openness regardless of strand
 
-            AAlens = np.zeros(len(trans_orfs), dtype='u4')
+            AAlens = np.zeros(len(trans_orfs), dtype='i4')
             AAlens[stop_present] = (stoppos[stop_present] - startpos[stop_present])/3 - 1
             tfam_orfs.append(pd.DataFrame.from_items([('tfam', tfam),
                                                       ('tid', tid),
@@ -201,7 +257,7 @@ def _identify_tfam_orfs((tfam, tids)):
                             curr_len = len(curr_cds_pos_set)
                             if curr_len % 3 == 0:
                                 curr_gcoord = curr_trans.get_genomic_coordinate(curr_trans.cds_start)[1]
-                                curr_gstop = curr_trans.get_genomic_coordinate(curr_trans.cds_end - 1)[1] + (strand == '+') * 2 - 1
+                                curr_gstop = curr_trans.get_genomic_coordinate(curr_trans.cds_end - 1)[1] + (1 if strand == '+' else -1)
                                 in_tfam = curr_cds_pos_set.issubset(tfam_genpos)
                                 cds_info.append((curr_gcoord, curr_gstop, (curr_len-3)/3, in_tfam, annot_fidx, annot_tid, curr_cds_pos_set))
                                 all_annot_pos.update(curr_cds_pos_set)

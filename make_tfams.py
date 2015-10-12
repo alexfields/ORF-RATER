@@ -1,8 +1,8 @@
 #! /usr/bin/env python
 
 import argparse
-from yeti.readers.bed import BED_Reader
-from yeti.genomics.roitools import SegmentChain, positionlist_to_segments
+from plastid.readers.bed import BED_Reader
+from plastid.genomics.roitools import SegmentChain, positionlist_to_segments
 from collections import defaultdict
 import os
 import sys
@@ -138,7 +138,7 @@ if opts.verbose:
 with open(outbedname, 'w') as outbed:
     with open(outtxtname, 'w') as outtxt:
         for tfam, (tids, (chrom, strand), genpos) in new_tfams.iteritems():
-            outbed.write(SegmentChain(*positionlist_to_segments(chrom, strand, genpos), ID=tfam).as_bed())
+            outbed.write(SegmentChain(*positionlist_to_segments(chrom, strand, list(genpos)), ID=tfam).as_bed())
             for tid in tids:
                 outtxt.write('%s\t%s\n' % (tid, tfam))
 

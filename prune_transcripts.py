@@ -3,8 +3,8 @@
 import argparse
 import os
 import sys
-from yeti.genomics.genome_array import BAMGenomeArray, FivePrimeMapFactory, SizeFilterFactory
-from yeti.genomics.roitools import SegmentChain  # , positionlist_to_segments
+from plastid.genomics.genome_array import BAMGenomeArray, FivePrimeMapFactory, SizeFilterFactory
+from plastid.genomics.roitools import SegmentChain
 import pysam
 from collections import defaultdict
 from Bio import SeqIO

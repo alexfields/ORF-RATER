@@ -23,9 +23,9 @@ parser.add_argument('--orfstore', default='orf.h5',
 parser.add_argument('--names', nargs='+', help='Names to use for datasets included in REGRESSFILEs. Should meaningfully indicate the important '
                                                'features of each. (Default: inferred from REGRESSFILEs)')
 parser.add_argument('--numtrees', type=int, default=2048, help='Number of trees to use in the random forest (Default: 2048)')
-parser.add_argument('--minperleaf', type=int, nargs='+', default=[8, 16, 32, 64, 128],
+parser.add_argument('--minperleaf', type=int, nargs='+', default=[1, 2, 4, 8],
                     help='Minimum samples per leaf to use in the random forest. Final value will be selected based on cross validation. (Default: '
-                         '8 16 32 64 128)')
+                         '1 2 4 8)')
 parser.add_argument('--minforestscore', type=float, default=0.3, help='Minimum forest score to require for monotonization (Default: 0.3)')
 parser.add_argument('--cvfold', type=int, default=6, help='Number of folds for random forest cross-validation (Default: 6)')
 parser.add_argument('--goldallcodons', action='store_true',
@@ -54,7 +54,7 @@ for regressfile in opts.regressfile:
     elif os.path.isdir(regressfile) and os.path.isfile(os.path.join(regressfile, 'regression.h5')):
         regressfiles.append(os.path.join(regressfile, 'regression.h5'))
         if not opts.names:
-            colnames.append(os.path.basename(regressfile.strip(os.path.pathsep)))  # '/path/to/mydir/' -> 'mydir'
+            colnames.append(os.path.basename(regressfile.strip(os.path.sep)))  # '/path/to/mydir/' -> 'mydir'
     else:
         raise IOError('Regression file/directory %s not found' % regressfile)
 
@@ -150,6 +150,9 @@ orfratings.loc[to_monotonize, 'orfrating'] = forest_monoreg.predict_proba(orfrat
 
 if opts.verbose:
     logprint('Saving results')
+
+for catfield in ['chrom', 'strand', 'codon', 'orftype']:
+    orfratings[catfield] = orfratings[catfield].astype('category')  # saves disk space and read/write time
 
 orfratings.to_hdf(opts.ratingsfile, 'orfratings', format='t', data_columns=True)
 
