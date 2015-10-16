@@ -83,19 +83,29 @@ for (regressfile, colname) in zip(regressfiles, colnames):
     with pd.get_store(regressfile, mode='r') as instore:
         if 'stop_strengths' in instore:
             stopcols.append(colname)
-            allstarts = allstarts.merge(instore.select('start_strengths', columns=['tfam', 'chrom', 'gcoord', 'strand', 'start_strength', 'W_start'])
-                                        .rename(columns={'start_strength': 'str_start_'+colname,
-                                                         'W_start': 'W_start_'+colname}), how='outer').fillna(0.)
+            currstarts = instore.select('start_strengths', columns=['tfam', 'chrom', 'gcoord', 'strand', 'start_strength', 'W_start']) \
+                .rename(columns={'start_strength': 'str_start_'+colname, 'W_start': 'W_start_'+colname})
+            currstarts['chrom'] = currstarts['chrom'].astype(str)  # strange bug when merging on categorical columns, so revert to str temporarily
+            currstarts['strand'] = currstarts['strand'].astype(str)
+            allstarts = allstarts.merge(currstarts, how='outer').fillna(0.)
+
             allorfs = allorfs.append(instore.select('orf_strengths', columns=orf_columns), ignore_index=True).drop_duplicates('orfname')
             # This line not actually used for regression output beyond just which ORFs actually got a positive score in at least one regression
             # Safer to use concatenation and drop_duplicates rather than outer merges, in case one ORF somehow was assigned to different transcripts
-            allstops = allstops.merge(instore.select('stop_strengths', columns=['tfam', 'chrom', 'gstop', 'strand', 'stop_strength', 'W_stop'])
-                                      .rename(columns={'stop_strength': 'str_stop_'+colname,
-                                                       'W_stop': 'W_stop_'+colname}), how='outer').fillna(0.)
+
+            currstops = instore.select('stop_strengths', columns=['tfam', 'chrom', 'gstop', 'strand', 'stop_strength', 'W_stop']) \
+                .rename(columns={'stop_strength': 'str_stop_'+colname, 'W_stop': 'W_stop_'+colname})
+            currstops['chrom'] = currstops['chrom'].astype(str)  # strange bug when merging on categorical columns, so revert to str temporarily
+            currstops['strand'] = currstops['strand'].astype(str)
+            allstops = allstops.merge(currstops, how='outer').fillna(0.)
+
             feature_columns.extend(['W_start_'+colname, 'W_stop_'+colname, 'str_stop_'+colname])
         else:
-            allstarts = allstarts.merge(instore.select('start_strengths', columns=['tfam', 'chrom', 'gcoord', 'strand', 'W_start'])
-                                        .rename(columns={'W_start': 'W_start_'+colname}), how='outer').fillna(0.)
+            currstarts = instore.select('start_strengths', columns=['tfam', 'chrom', 'gcoord', 'strand', 'W_start']) \
+                .rename(columns={'W_start': 'W_start_'+colname})
+            currstarts['chrom'] = currstarts['chrom'].astype(str)  # strange bug when merging on categorical columns, so revert to str temporarily
+            currstarts['strand'] = currstarts['strand'].astype(str)
+            allstarts = allstarts.merge(currstarts, how='outer').fillna(0.)
             feature_columns.append('W_start_'+colname)
 
 orfratings = allorfs[allorfs['gcoord'] != allorfs['gstop']].merge(allstarts, how='left').merge(allstops, how='left').fillna(0.)
