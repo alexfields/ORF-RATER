@@ -14,10 +14,10 @@ import sys
 from time import strftime
 
 parser = argparse.ArgumentParser(description='Use linear regression to identify likely sites of translation. Regression will be performed for ORFs '
-                                             'defined by find_orfs.py using a metagene profile constructed from annotated CDSs identified by '
-                                             'find_annotations.py. If multiple ribosome profiling datasets are to be analyzed separately (e.g. if '
-                                             'they were collected under different drug treatments), then this program should be run separately for '
-                                             'each, ideally in separate subfolders indicated by SUBDIR.')
+                                             'defined by find_orfs_and_types.py using a metagene profile constructed from annotated CDSs. If '
+                                             'multiple ribosome profiling datasets are to be analyzed separately (e.g. if they were collected under '
+                                             'different drug treatments), then this program should be run separately for each, ideally in separate '
+                                             'subfolders indicated by SUBDIR.')
 
 parser.add_argument('bamfiles', nargs='+', help='Path to transcriptome-aligned BAM file(s) for read data')
 parser.add_argument('--subdir', default=os.path.curdir,
