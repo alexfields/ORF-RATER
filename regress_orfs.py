@@ -132,7 +132,7 @@ def _get_annotated_counts_by_chrom(chrom_to_do):
                             where="chrom == '%s' and orftype == 'annotated' and tstop > 0 and tcoord > %d and AAlen > %d"
                                   % (chrom_to_do, -startnt[0], min_AAlen),
                             columns=['orfname', 'tfam', 'tid', 'tcoord', 'tstop', 'AAlen']) \
-        .sort('AAlen', ascending=False).drop_duplicates('tfam')  # use the longest annotated CDS in each transcript family
+        .sort_values('AAlen', ascending=False).drop_duplicates('tfam')  # use the longest annotated CDS in each transcript family
     num_cds_incl = 0  # number of CDSs included from this chromosome
     startprof = np.zeros((len(rdlens), startlen))
     cdsprof = np.zeros((len(rdlens), 3))
@@ -235,7 +235,7 @@ def _regress_tfam(orf_set, gnd):
         if orf_set.empty:
             return failure_return
 
-    orf_strength_df = orf_set.sort('tcoord', ascending=False).drop_duplicates('orfname').reset_index(drop=True)
+    orf_strength_df = orf_set.sort_values('tcoord', ascending=False).drop_duplicates('orfname').reset_index(drop=True)
     abort_set = orf_set.drop_duplicates('gcoord').copy()
     abort_set['gstop'] = abort_set['gcoord']  # should maybe be +/-3, but then need to worry about splicing - and this is an easy flag
     abort_set['tstop'] = abort_set['tcoord']+3  # stop after the first codon
