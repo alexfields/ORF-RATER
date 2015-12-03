@@ -5,4 +5,6 @@ The software was created at [Jonathan Weissman's lab at UCSF](http://weissmanlab
 
 Usage information can be found in the Detailed Protocol included in the paper's supplemental materials, or by running each script with the --help/-h flag.
 
+Some features require the [multiisotonic](https://github.com/alexfields/multiisotonic) package.
+
 Contact Alex Fields for further information or assistance.
