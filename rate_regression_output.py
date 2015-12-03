@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 from sklearn.grid_search import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
-from monotone import monotonic_regressor
+from multiisotonic.multiisotonic import MultiIsotonicRegressor
 import sys
 from time import strftime
 
@@ -150,13 +150,12 @@ to_monotonize = orfratings['forest_score'] > opts.minforestscore
 if opts.verbose:
     logprint('Monotonizing %d ORFs' % to_monotonize.sum())
 
-forest_monoreg = monotonic_regressor()
+forest_monoreg = MultiIsotonicRegressor()
 forest_monoreg.fit(orfratings.loc[to_monotonize, feature_columns].values,
-                   orfratings.loc[to_monotonize, 'forest_score'].values,
-                   njob=opts.numproc)  # parallelization actually accomplishes almost nothing here, but may as well use it since we have it...
+                   orfratings.loc[to_monotonize, 'forest_score'].values)
 
 orfratings['orfrating'] = np.nan
-orfratings.loc[to_monotonize, 'orfrating'] = forest_monoreg.predict_proba(orfratings.loc[to_monotonize, feature_columns].values)
+orfratings.loc[to_monotonize, 'orfrating'] = forest_monoreg.predict(orfratings.loc[to_monotonize, feature_columns].values)
 
 if opts.verbose:
     logprint('Saving results')
