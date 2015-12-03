@@ -1,3 +1,4 @@
+# ORF-RATER
 ORF-RATER (Open Reading Frame - Regression Algorithm for Translational Evaluation of Ribosome-protected footprints) comprises a series of scripts for coding sequence annotation based on ribosome profiling data.
 
 The software was created at [Jonathan Weissman's lab at UCSF](http://weissmanlab.ucsf.edu/) and is described in Fields, Rodriguez, et al., "A regression-based analysis of ribosome-profiling data reveals a conserved complexity to mammalian translation", Molecular Cell (2015), in press.
