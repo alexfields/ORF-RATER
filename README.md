@@ -5,6 +5,8 @@ The software was created at [Jonathan Weissman's lab at UCSF](http://weissmanlab
 
 Usage information can be found in the Detailed Protocol included in the paper's supplemental materials, or by running each script with the --help/-h flag.
 
-Some features require the [multiisotonic](https://github.com/alexfields/multiisotonic) package.
+Required packages include [numpy](http://www.numpy.org), [scipy](http://www.scipy.org), [pysam](https://github.com/pysam-developers/pysam), [biopython](http://www.biopython.org), [pandas](http://pandas.pydata.org/), [scikit-learn](http://scikit-learn.org/), [pybedtools](https://pythonhosted.org/pybedtools/), and [plastid](https://pypi.python.org/pypi/plastid), all of which are available through [PyPI](https://pypi.python.org/pypi). 
+
+Some features require the [multiisotonic](https://github.com/alexfields/multiisotonic) package, which must be downloaded manually.
 
 Contact Alex Fields for further information or assistance.
