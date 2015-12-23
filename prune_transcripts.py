@@ -182,10 +182,15 @@ def _find_mm_in_range(partnum):
     for (chrom, strand) in bedlinedict.keys():
         fname = seq_info_hdf % (chrom, strand)
         if os.path.isfile(fname):
-            seq_df.append(pd.read_hdf(fname, 'tid_seq_info',
+            seq_df.append(pd.read_hdf(fname, 'tid_seq_info', mode='r',
                                       where="seq >= %d & seq < %d" % (partitions[partnum], partitions[partnum + 1])))
             seq_df[-1]['chrom'] = chrom
             seq_df[-1]['strand'] = strand
+    if not seq_df:  # no sequences in this partition
+        if opts.verbose > 1:
+            with log_lock:
+                logprint('Partition %d of %d contained no sequences' % (partnum + 1, npart))
+        return pd.DataFrame()
     seq_df = pd.concat(seq_df, ignore_index=True)
     # Only care if the multimap is to a different genomic position
     uniqpos = seq_df.drop_duplicates(['chrom', 'strand', 'genpos', 'seq'])
@@ -214,13 +219,13 @@ workers.close()
 # Need to add them together to get the results for all sequences
 mm_df_res = mm_df[0]
 for df in mm_df[1:]:
-    mm_df_res = mm_df_res.add(df, fill_value=0)
+    mm_df_res = mm_df_res.add(df, fill_value=0)  # this can handle empty dataframes (treated as all 0s), even if mm_df[0] is empty
 
 if not opts.keeptempfiles:
     for (chrom, strand) in bedlinedict.keys():
         try:
             os.remove(seq_info_hdf % (chrom, strand))  # no longer needed
-        except:
+        except OSError:
             pass  # some files may not exist, in which case...no problem
 
 tid_info = pd.concat((tid_summary[['chrom', 'strand', 'n_psite', 'n_reads']],
@@ -237,7 +242,10 @@ if pseudos.size > 0:
 
     def _find_kept_mm_in_range(partnum):
         """Load the multimapping positions on kept_tids from each partitioned dataframe"""
-        seq_df = pd.read_hdf(outname % partnum, 'tid_seq_mm')
+        try:
+            seq_df = pd.read_hdf(outname % partnum, 'tid_seq_mm', mode='r')
+        except IOError:
+            return pd.DataFrame()
         seq_df = seq_df[seq_df['tid'].isin(kept_tids)]
         # Only care if the multimap is to a different genomic position
         uniqpos = seq_df.drop_duplicates(['chrom', 'strand', 'genpos', 'seq'])
@@ -265,11 +273,11 @@ if not opts.keeptempfiles:
     for partnum in xrange(npart):
         try:
             os.remove(outname % partnum)  # no longer needed
-        except:
+        except OSError:
             pass
     try:
         os.rmdir(temp_folder)
-    except:
+    except OSError:
         pass  # try to remove the folder, but don't die if it's not empty
 
 # Fraction of multimapped reads should be comparable to the fraction of multimapped positions
