@@ -95,7 +95,7 @@ if os.path.exists(temp_folder):
     temp_folder = 'tid_seq_info_temp_%d' % num
 os.mkdir(temp_folder)
 
-seq_info_hdf_orig = os.path.join(temp_folder, 'tid_seq_%s%s_orig.h5')
+# seq_info_hdf_orig = os.path.join(temp_folder, 'tid_seq_%s%s_orig.h5')
 seq_info_hdf = os.path.join(temp_folder, 'tid_seq_%s%s.h5')
 
 
@@ -160,6 +160,10 @@ if opts.verbose:
 workers = mp.Pool(opts.numproc)
 tid_summary = pd.concat(workers.map(_get_tid_info, bedlinedict.keys()))
 workers.close()
+
+if not (tid_summary['dropped'] == '').any():
+    raise ValueError('All transcripts dropped due to too few reads or too many reads coming from one position. Consider increasing MINREADS '
+                     '(currently %d) and/or PEAKFRAC (currently %f), or check validity of input BAM file.' % (opts.minreads, opts.peakfrac))
 
 min_numseq = 0
 max_numseq = 4 ** fpsize
