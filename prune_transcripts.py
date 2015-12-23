@@ -161,9 +161,11 @@ workers = mp.Pool(opts.numproc)
 tid_summary = pd.concat(workers.map(_get_tid_info, bedlinedict.keys()))
 workers.close()
 
-if not (tid_summary['dropped'] == '').any():
-    raise ValueError('All transcripts dropped due to too few reads or too many reads coming from one position. Consider increasing MINREADS '
-                     '(currently %d) and/or PEAKFRAC (currently %f), or check validity of input BAM file.' % (opts.minreads, opts.peakfrac))
+if not (tid_summary['dropped'] == '').any():  # all transcripts dropped
+    lowreads_dropped = (tid_summary['dropped'] == 'lowreads').sum()
+    raise ValueError('All %d transcripts dropped due to too few reads (%d) or too many reads coming from one position (%d). Consider increasing '
+                     'MINREADS (currently %d) and/or PEAKFRAC (currently %f), or check validity of input BAM file.'
+                     % (len(tid_summary), lowreads_dropped, len(tid_summary)-lowreads_dropped, opts.minreads, opts.peakfrac))
 
 min_numseq = 0
 max_numseq = 4 ** fpsize
