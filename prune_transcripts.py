@@ -162,9 +162,14 @@ tid_summary = pd.concat(workers.map(_get_tid_info, bedlinedict.keys()))
 workers.close()
 
 if not (tid_summary['dropped'] == '').any():  # all transcripts dropped
+    if not opts.keeptempfiles:
+        try:
+            os.rmdir(temp_folder)
+        except OSError:
+            pass  # try to remove the folder, but don't die if it's not empty
     lowreads_dropped = (tid_summary['dropped'] == 'lowreads').sum()
-    raise ValueError('All %d transcripts dropped due to too few reads (%d) or too many reads coming from one position (%d). Consider increasing '
-                     'MINREADS (currently %d) and/or PEAKFRAC (currently %f), or check validity of input BAM file.'
+    raise ValueError('All %d transcripts dropped due to too few reads (%d) or too many reads coming from one position (%d). Consider decreasing '
+                     'MINREADS (currently %d) or increasing PEAKFRAC (currently %f), or check validity of input BAM file.'
                      % (len(tid_summary), lowreads_dropped, len(tid_summary)-lowreads_dropped, opts.minreads, opts.peakfrac))
 
 min_numseq = 0
@@ -192,11 +197,6 @@ def _find_mm_in_range(partnum):
                                       where="seq >= %d & seq < %d" % (partitions[partnum], partitions[partnum + 1])))
             seq_df[-1]['chrom'] = chrom
             seq_df[-1]['strand'] = strand
-    if not seq_df:  # no sequences in this partition
-        if opts.verbose > 1:
-            with log_lock:
-                logprint('Partition %d of %d contained no sequences' % (partnum + 1, npart))
-        return pd.DataFrame()
     seq_df = pd.concat(seq_df, ignore_index=True)
     # Only care if the multimap is to a different genomic position
     uniqpos = seq_df.drop_duplicates(['chrom', 'strand', 'genpos', 'seq'])
@@ -234,8 +234,8 @@ if not opts.keeptempfiles:
         except OSError:
             pass  # some files may not exist, in which case...no problem
 
-tid_info = pd.concat((tid_summary[['chrom', 'strand', 'n_psite', 'n_reads']],
-                      mm_df_res.rename(columns={'genpos': 'mm_psite', 'reads': 'mm_reads'})), axis=1) \
+tid_info = tid_summary[['chrom', 'strand', 'n_psite', 'n_reads']] \
+    .join(mm_df_res.rename(columns={'genpos': 'mm_psite', 'reads': 'mm_reads'})) \
     .fillna({'mm_psite': 0,
              'mm_reads': 0})  # if a transcript isn't listed in mm_df_res, it doesn't have any multimapping positions
 tid_info['reads_mm_frac'] = tid_info['mm_reads'] / tid_info['n_reads']
@@ -268,8 +268,8 @@ if pseudos.size > 0:
     mm_df_res = mm_df[0]
     for df in mm_df[1:]:
         mm_df_res = mm_df_res.add(df, fill_value=0)
-    tid_info = pd.concat((tid_summary[['chrom', 'strand', 'n_psite', 'n_reads']],
-                          mm_df_res.rename(columns={'genpos': 'mm_psite', 'reads': 'mm_reads'})), axis=1) \
+    tid_info = tid_summary[['chrom', 'strand', 'n_psite', 'n_reads']] \
+        .join(mm_df_res.rename(columns={'genpos': 'mm_psite', 'reads': 'mm_reads'})) \
         .fillna({'mm_psite': 0,
                  'mm_reads': 0})  # if a transcript isn't listed in mm_df_res, it doesn't have any multimapping positions, or it has been dropped
     tid_info['reads_mm_frac'] = tid_info['mm_reads'] / tid_info['n_reads']
