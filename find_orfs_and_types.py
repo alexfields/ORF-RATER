@@ -170,10 +170,11 @@ def _name_orf(tfam, gcoord, AAlen):
     return '%s_%d_%daa' % (tfam, gcoord, AAlen)
 
 
-def _identify_tfam_orfs((tfam, tids)):
+def _identify_tfam_orfs(tup):
     """Identify all of the possible ORFs within a family of transcripts. Relevant information such as genomic start and stop positions, amino acid
     length, and initiation codon will be collected for each ORF. Additionally, each ORF will be assigned a unique 'orfname', such that if it occurs
     on multiple transcripts, it can be recognized as the same ORF."""
+    (tfam, tids) = tup
     currtfam = SegmentChain.from_bed(tfambedlines[tfam])
     chrom = currtfam.chrom
     strand = currtfam.strand

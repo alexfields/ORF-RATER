@@ -105,9 +105,10 @@ os.mkdir(temp_folder)
 seq_info_hdf = os.path.join(temp_folder, 'tid_seq_%s%s.h5')
 
 
-def _get_tid_info((chrom, strand)):
+def _get_tid_info(tup):
     """For each transcript on this chromosome/strand, identifies every sub-sequence of the appropriate length (fpsize), converts it to an integer,
     identifies the number of reads mapping to that position, and outputs all of that information to a pandas HDF store."""
+    (chrom, strand) = tup
     inbams = [pysam.Samfile(infile, 'rb') for infile in opts.bamfiles]
     gnd = BAMGenomeArray(inbams, FivePrimeMapFactory(psite))
     # map to roughly the center of each read so that identical sequences that cross different splice sites
