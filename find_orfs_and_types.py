@@ -41,6 +41,7 @@ if not opts.force and os.path.exists(opts.orfstore):
 IUPAC_TABLE_DNA = {"A": "A",
                    "C": "C",
                    "T": "T",
+                   "U": "T",
                    "G": "G",
                    "N": ("A", "C", "T", "G"),
                    "R": ("A", "G"),     # puRines
@@ -394,6 +395,7 @@ def _identify_tfam_orfs((tfam, tids)):
                                                                    & (cds_info['gcoord'] < gcoord)
                                                                    & (cds_info['gstop'] > gstop), 'pos']):
                                 tfam_orfs.loc[tfam_orfs['orfname'] == orfname, ['orftype', 'untyped']] = ['internal', False]
+                        # contained within, and all positions in the annotation between the orf start and stop codons are included in the orf
 
                 # STOP_OVERLAP
                 if tfam_orfs['untyped'].any():
@@ -421,7 +423,7 @@ def _identify_tfam_orfs((tfam, tids)):
                                                                       on='tid', suffixes=('', '_annot'))
                     sametrans_loof = (sametrans['tcoord'] < sametrans['tcoord_annot']) & (sametrans['tstop'] > sametrans['tstop_annot'])
                     tfam_orfs.loc[tfam_orfs['orfname'].isin(sametrans.loc[sametrans_loof, 'orfname']), ['orftype', 'untyped']] = ['LOOF', False]
-                    # starts upstream of a CDS and ends downstream of it - must be a LOOF (long out-of-frame)
+                    # starts upstream of a CDS and ends downstream of it - must be a LOOF ("long out-of-frame")
                     # don't need to check for unfounds because the CDS must be on the same transcript as the ORF if the ORF completely contains it
 
                 # UPSTREAM
@@ -441,7 +443,7 @@ def _identify_tfam_orfs((tfam, tids)):
                     sametrans_downstream = (sametrans['tstop_annot'] <= sametrans['tcoord'])
                     tfam_orfs.loc[tfam_orfs['orfname'].isin(sametrans.loc[sametrans_downstream, 'orfname']),
                                   ['orftype', 'untyped']] = ['downstream', False]
-                    # starts downstream of a CDS - must be an upstream (uORF)
+                    # starts downstream of a CDS - must be a downstream ORF
                     # cannot check manually for unfounds because those are not on well-defined transcripts
 
                 # NEW_ISO and GISO
