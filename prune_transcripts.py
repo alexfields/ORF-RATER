@@ -33,9 +33,9 @@ parser.add_argument('--outbed', default='transcripts.bed',
                     help='File to which to output BED-formatted transcripts that passed all filters (Default: transcripts.bed)')
 parser.add_argument('--minlen', type=int, default=29,
                     help='Minimum length of read to be considered when evaluating transcripts. '
-                         'Also serves as the size of the segment when identifying multimapping positions. (Default: 29)')
+                         'Also serves as the size of the segment when identifying multimapping positions. Must be <= 31 (Default: 29)')
 parser.add_argument('--maxlen', type=int, default=30,
-                    help='Maximum length (inclusive) of read to be considered when evaluating transcripts. (Default: 30)')
+                    help='Maximum length (inclusive) of read to be considered when evaluating transcripts. Must be >= MINLEN (Default: 30)')
 parser.add_argument('--minreads', type=int, default=64, help='Minimum number of reads demanded for each transcript (Default: 64)')
 parser.add_argument('--peakfrac', type=float, default=1./5,
                     help='Maximum fraction of a transcript\'s reads coming from any one position (Default: 0.2)')
@@ -53,6 +53,12 @@ opts = parser.parse_args()
 
 if not opts.force and os.path.exists(opts.outbed):
     raise IOError('%s exists; use --force to overwrite' % opts.outbed)
+
+if opts.minlen > 31:
+    raise ValueError('MINLEN must be <= 31 (currently %d)' % opts.minlen)
+
+if opts.minlen > opts.maxlen:
+    raise ValueError('MINLEN must be <= MAXLEN (currently %d and %d, respectively)' % (opts.minlen, opts.maxlen))
 
 if opts.verbose:
     sys.stdout.write(' '.join(sys.argv) + '\n')
@@ -132,8 +138,8 @@ def _get_tid_info((chrom, strand)):
                     curr_seq = ''.join(numseq)
                     tid_seq_info.append(pd.DataFrame({'tid': tid,
                                                       'genpos': curr_pos_list[psite:n_psite + psite],
-                                                      'seq': [(int(curr_seq[i:i + fpsize], 4) if 'N' not in curr_seq[i:i + fpsize] else -1)
-                                                              for i in xrange(n_psite)],
+                                                      'seq': np.array([(int(curr_seq[i:i + fpsize], 4) if 'N' not in curr_seq[i:i + fpsize] else -1)
+                                                                       for i in xrange(n_psite)], dtype=np.int64),
                                                       'reads': curr_counts}))
                 else:
                     tid_summary.at[tid, 'dropped'] = 'peakfrac'
