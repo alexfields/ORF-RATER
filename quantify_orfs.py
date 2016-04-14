@@ -47,6 +47,7 @@ parser.add_argument('--minrating', type=float, default=0.8, help='Minimum ORF ra
 parser.add_argument('--quantfile', default='quant.h5',
                     help='Filename to which to output the table of quantified translation values for each ORF. Formatted as pandas HDF; table name '
                          'is "quant". If SUBDIR is set, this file will be placed in that directory. (Default: quant.h5)')
+parser.add_argument('--CSV', help='If included, also write output in CSV format to the provided filename.')
 parser.add_argument('-v', '--verbose', action='count', help='Output a log of progress and timing (to stdout). Repeat for higher verbosity level.')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but more recommended if available.')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
@@ -56,8 +57,11 @@ offsetfilename = os.path.join(opts.subdir, opts.offsetfile)
 metafilename = os.path.join(opts.subdir, opts.metagenefile)
 quantfilename = os.path.join(opts.subdir, opts.quantfile)
 
-if not opts.force and os.path.exists(quantfilename):
-    raise IOError('%s exists; use --force to overwrite' % quantfilename)
+if not opts.force:
+    if os.path.exists(quantfilename):
+        raise IOError('%s exists; use --force to overwrite' % quantfilename)
+    if opts.CSV and os.path.exists(opts.CSV):
+        raise IOError('%s exists; use --force to overwrite' % opts.CSV)
 
 if opts.names:
     if len(opts.bamfiles) != len(opts.names):
@@ -194,6 +198,8 @@ for catfield in ['chrom', 'strand', 'codon', 'orftype']:
     quant[catfield] = quant[catfield].astype('category')  # saves disk space and read/write time
 
 quant.to_hdf(quantfilename, 'quant', format='t', data_columns=True)
+if opts.CSV:
+    quant.to_csv(opts.CSV, index=False)
 
 if opts.verbose:
     logprint('Tasks complete')

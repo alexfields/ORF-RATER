@@ -36,13 +36,17 @@ parser.add_argument('--ratingsfile', default='orfratings.h5',
                     help='Filename to which to output the final rating for each ORF. Formatted as pandas HDF (table name is "orfratings"). Columns '
                          'include basic information, raw score from random forest, and final monotonized orf rating. For ORFs appearing on multiple '
                          'transcripts, only one transcript will be selected for the table. (Default: orfratings.h5)')
+parser.add_argument('--CSV', help='If included, also write output in CSV format to the provided filename.')
 parser.add_argument('-v', '--verbose', action='store_true', help='Output a log of progress and timing (to stdout)')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but more recommended if available.')
 parser.add_argument('-f', '--force', action='store_true', help='Force file overwrite')
 opts = parser.parse_args()
 
-if not opts.force and os.path.exists(opts.ratingsfile):
-    raise IOError('%s exists; use --force to overwrite' % opts.ratingsfile)
+if not opts.force:
+    if os.path.exists(opts.ratingsfile):
+        raise IOError('%s exists; use --force to overwrite' % opts.ratingsfile)
+    if opts.CSV and os.path.exists(opts.CSV):
+        raise IOError('%s exists; use --force to overwrite' % opts.CSV)
 
 regressfiles = []
 colnames = []
@@ -164,6 +168,8 @@ for catfield in ['chrom', 'strand', 'codon', 'orftype']:
     orfratings[catfield] = orfratings[catfield].astype('category')  # saves disk space and read/write time
 
 orfratings.to_hdf(opts.ratingsfile, 'orfratings', format='t', data_columns=True)
+if opts.CSV:
+    orfratings.to_csv(opts.CSV, index=False)
 
 if opts.verbose:
     logprint('Tasks complete')
