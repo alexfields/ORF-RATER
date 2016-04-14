@@ -9,4 +9,6 @@ Required packages include [numpy](http://www.numpy.org), [scipy](http://www.scip
 
 Some features require the [multiisotonic](https://github.com/alexfields/multiisotonic) package, which must be downloaded manually. Multiisotonic additionally requires [python-igraph](https://github.com/igraph/python-igraph).
 
+Transcripts must be presented in UCSC's [BED12 format](https://genome.ucsc.edu/FAQ/FAQformat.html#format1). The most reliable method I've found to convert from GTF to BED12 involves first converting to [genePred format](https://genome.ucsc.edu/FAQ/FAQformat.html#format9), making use of UCSC's "gtfToGenePred" and "genePredToBed" scripts, which are available [here](http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/). The full command is `gtfToGenePred INPUT_GTFFILE.gtf stdout | genePredToBed stdin OUTPUT_BEDFILE.bed`. Similarly, a BED file can be converted to a GTF using the command `bedToGenePred INPUT_BEDFILE.bed stdout | genePredToGtf file stdin OUTPUT_GTFFILE.gtf`.
+
 Contact Alex Fields for further information or assistance.
