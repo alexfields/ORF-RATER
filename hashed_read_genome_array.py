@@ -116,7 +116,7 @@ class HashedReadBAMGenomeArray(BAMGenomeArray):
             list of valid keys stored as mapping.read_keys.
             Typically generated using ReadKeyMapFactory().
         """
-        BAMGenomeArray.__init__(self,bamfiles,mapping)
+        BAMGenomeArray.__init__(self,bamfiles,mapping=mapping)
 
     def get_reads_and_hashed_counts(self,roi,roi_order=True):
         """Returns reads covering a region, and a dict of count vectors mapping
