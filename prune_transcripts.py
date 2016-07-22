@@ -110,7 +110,7 @@ def _get_tid_info(tup):
     identifies the number of reads mapping to that position, and outputs all of that information to a pandas HDF store."""
     (chrom, strand) = tup
     inbams = [pysam.Samfile(infile, 'rb') for infile in opts.bamfiles]
-    gnd = BAMGenomeArray(inbams, FivePrimeMapFactory(psite))
+    gnd = BAMGenomeArray(inbams, mapping=FivePrimeMapFactory(psite))
     # map to roughly the center of each read so that identical sequences that cross different splice sites
     # (on different transcripts) still end up mapping to the same place
     gnd.add_filter('size', SizeFilterFactory(opts.minlen, opts.maxlen))
