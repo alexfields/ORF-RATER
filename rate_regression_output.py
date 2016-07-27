@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from sklearn.grid_search import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.cross_validation import cross_val_score, StratifiedKFold
 from multiisotonic.multiisotonic import MultiIsotonicRegressor
 import sys
 from time import strftime
@@ -23,9 +24,9 @@ parser.add_argument('--orfstore', default='orf.h5',
 parser.add_argument('--names', nargs='+', help='Names to use for datasets included in REGRESSFILEs. Should meaningfully indicate the important '
                                                'features of each. (Default: inferred from REGRESSFILEs)')
 parser.add_argument('--numtrees', type=int, default=2048, help='Number of trees to use in the random forest (Default: 2048)')
-parser.add_argument('--minperleaf', type=int, nargs='+', default=[1, 2, 4, 8],
-                    help='Minimum samples per leaf to use in the random forest. Final value will be selected based on cross validation. (Default: '
-                         '1 2 4 8)')
+parser.add_argument('--minperleaf', type=int, nargs='+', default=[32],
+                    help='Minimum samples per leaf to use in the random forest. If multiple values are provided, one will be selected based on cross '
+                         'validation. If only one value is provided, will search for optimum by multiplying or dividing by powers of 2 (Default: 32)')
 parser.add_argument('--minforestscore', type=float, default=0.3, help='Minimum forest score to require for monotonization (Default: 0.3)')
 parser.add_argument('--cvfold', type=int, default=6, help='Number of folds for random forest cross-validation (Default: 6)')
 parser.add_argument('--goldallcodons', action='store_true',
@@ -134,20 +135,60 @@ gold_feat = gold_df[feature_columns].values
 if opts.verbose:
     logprint('Gold set contains %d annotated ORFs and %d unannotated ORFs' % ((gold_class > 0).sum(), (gold_class < 0).sum()))
 
-currgrid = GridSearchCV(RandomForestClassifier(n_estimators=opts.numtrees), param_grid={'min_samples_leaf': opts.minperleaf},
-                        scoring='accuracy', cv=opts.cvfold, n_jobs=opts.numproc)
-currgrid.fit(gold_feat, gold_class)
+mycv = StratifiedKFold(gold_class, opts.cvfold, shuffle=True)
+if len(opts.minperleaf) > 1:
+    currgrid = GridSearchCV(RandomForestClassifier(n_estimators=opts.numtrees), param_grid={'min_samples_leaf': opts.minperleaf},
+                            scoring='accuracy', cv=mycv, n_jobs=opts.numproc)
+    currgrid.fit(gold_feat, gold_class)
 
-if opts.verbose:
-    logprint('Best estimator has estimated %f accuracy with %d minimum samples per leaf' %
-             (currgrid.best_score_, currgrid.best_params_['min_samples_leaf']))
+    if opts.verbose:
+        logprint('Best estimator has estimated %f accuracy with %d minimum samples per leaf' %
+                 (currgrid.best_score_, currgrid.best_params_['min_samples_leaf']))
 
-if currgrid.best_params_['min_samples_leaf'] == min(opts.minperleaf) and min(opts.minperleaf) > 1:
-    sys.stderr.write('WARNING: Optimal minimum samples per leaf is minimum tested; recommended to test lower values\n')
-if currgrid.best_params_['min_samples_leaf'] == max(opts.minperleaf):
-    sys.stderr.write('WARNING: Optimal minimum samples per leaf is maximum tested; recommended to test greater values\n')
+    if currgrid.best_params_['min_samples_leaf'] == min(opts.minperleaf) and min(opts.minperleaf) > 1:
+        sys.stderr.write('WARNING: Optimal minimum samples per leaf is minimum tested; recommended to test lower values\n')
+    if currgrid.best_params_['min_samples_leaf'] == max(opts.minperleaf):
+        sys.stderr.write('WARNING: Optimal minimum samples per leaf is maximum tested; recommended to test greater values\n')
 
-orfratings['forest_score'] = currgrid.best_estimator_.predict_proba(orfratings[feature_columns].values)[:, 1]
+    best_est = currgrid.best_estimator_
+else:
+    def _get_score(val):
+        return cross_val_score(RandomForestClassifier(n_estimators=opts.numtrees, min_samples_leaf=val),
+                               gold_feat, gold_class, scoring='roc_auc', cv=mycv, n_jobs=opts.numproc).mean()
+    prevval = opts.minperleaf[0]
+    prevres = _get_score(prevval)
+    currval = prevval*2
+    currres = _get_score(currval)
+    if currres <= prevres:  # getting better as val decreases
+        (prevval, currval) = (currval, prevval)
+        (prevres, currres) = (currres, prevres)
+        while currres >= prevres:
+            if currval == 1:
+                best_score = currres
+                best_param = currval
+                break
+            prevval = currval
+            prevres = currres
+            currval //= 2
+            currres = _get_score(currval)
+        else:
+            best_score = prevres
+            best_param = prevval
+    else:  # getting better as val increases
+        while currres >= prevres:
+            prevval = currval
+            prevres = currres
+            currval *= 2
+            currres = _get_score(currval)
+        best_score = prevres
+        best_param = prevval
+    if opts.verbose:
+        logprint('Best estimator has estimated %f accuracy with %d minimum samples per leaf' % (best_score, best_param))
+
+    best_est = RandomForestClassifier(n_estimators=opts.numtrees, min_samples_leaf=best_param, n_jobs=opts.numproc)
+    best_est.fit(gold_feat, gold_class)
+
+orfratings['forest_score'] = best_est.predict_proba(orfratings[feature_columns].values)[:, 1]
 
 to_monotonize = orfratings['forest_score'] > opts.minforestscore
 
