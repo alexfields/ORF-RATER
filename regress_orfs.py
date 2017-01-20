@@ -420,13 +420,13 @@ else:
     stopprof /= num_cds_incl
 
     pd.concat((pd.DataFrame(data=startprof.T,
-                            index=pd.MultiIndex.from_product(['START', np.arange(*startnt)], names=['region', 'position']),
+                            index=pd.MultiIndex.from_tuples([('START', x) for x in range(*startnt)], names=['region', 'position']),
                             columns=pd.Index(rdlens, name='rdlen')),
                pd.DataFrame(data=cdsprof.T,
-                            index=pd.MultiIndex.from_product(['CDS', np.arange(3)], names=['region', 'position']),
+                            index=pd.MultiIndex.from_tuples([('CDS', x) for x in range(3)], names=['region', 'position']),
                             columns=pd.Index(rdlens, name='rdlen')),
                pd.DataFrame(data=stopprof.T,
-                            index=pd.MultiIndex.from_product(['STOP', np.arange(*stopnt)], names=['region', 'position']),
+                            index=pd.MultiIndex.from_tuples([('STOP', x) for x in range(*stopnt)], names=['region', 'position']),
                             columns=pd.Index(rdlens, name='rdlen')))) \
         .to_csv(metafilename, sep='\t')
 
