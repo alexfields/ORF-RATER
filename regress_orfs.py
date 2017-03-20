@@ -66,6 +66,8 @@ parser.add_argument('--metagenefile', default='metagene.txt',
                          'tab-delimited text, with position, readlength, value, and type ("START", "CDS", or "STOP"). If SUBDIR is set, this file '
                          'will be placed in that directory. (Default: metagene.txt)')
 parser.add_argument('--noregress', action='store_true', help='Only generate a metagene (i.e. do not perform any regressions)')
+parser.add_argument('--exclude', nargs='+', help='Names of transcript families (tfams) to exclude from analysis due to excessive computational time '
+                                                 'or memory footprint (e.g. TTN can be so large that the regression never finishes).')
 parser.add_argument('-v', '--verbose', action='count', help='Output a log of progress and timing (to stdout). Repeat for higher verbosity level.')
 parser.add_argument('-p', '--numproc', type=int, default=1, help='Number of processes to run. Defaults to 1 but more recommended if available.')
 parser.add_argument('-f', '--force', action='store_true',
@@ -352,6 +354,9 @@ def _regress_chrom(chrom_to_do):
                                       'codon', 'orftype', 'annot_start', 'annot_stop'])
     # tcoord > 0 removes ORFs where the first codon is an NTG, to avoid an indexing error
     # Those ORFs would never get called anyway since they couldn't possibly have any reads at their start codon
+
+    if opts.exclude:
+        chrom_orfs = chrom_orfs[~chrom_orfs['tfam'].isin(opts.exclude)]
 
     if restrictbystartfilenames:
         restrictedstarts = pd.DataFrame()
