@@ -368,7 +368,8 @@ def _regress_chrom(chrom_to_do):
 
     if chrom_orfs.empty:
         if opts.verbose > 1:
-            logprint('No ORFs found on %s' % chrom_to_do)
+            with log_lock:
+                logprint('No ORFs found on %s' % chrom_to_do)
         return failure_return
 
     inbams = [pysam.Samfile(infile, 'rb') for infile in opts.bamfiles]
@@ -380,7 +381,8 @@ def _regress_chrom(chrom_to_do):
         inbam.close()
 
     if opts.verbose > 1:
-        logprint('%s complete' % chrom_to_do)
+        with log_lock:
+            logprint('%s complete' % chrom_to_do)
 
     return res
 
