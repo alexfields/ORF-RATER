@@ -287,7 +287,7 @@ def _regress_tfam(orf_set, gnd):
     if not usable_orfs.any():
         return failure_return
     orf_strength_df = orf_strength_df[usable_orfs]
-    orf_matrix = orf_matrix[:, usable_orfs] # remove entries for zero-strength ORFs or transcripts
+    orf_matrix = orf_matrix[:, usable_orfs]  # remove entries for zero-strength ORFs or transcripts
     orf_strs = orf_strs[usable_orfs]
     orf_strength_df['orf_strength'] = orf_strs
 
@@ -305,11 +305,15 @@ def _regress_tfam(orf_set, gnd):
     elongating_orfs = ~(orf_strength_df['gstop'] == orf_strength_df['gcoord'])
     if opts.startonly:  # count abortive initiation events towards start strength in this case
         include_starts = (orf_strength_df['tcoord'] != orf_strength_df['tstop'])
+        if not include_starts.any():
+            return failure_return  # no need to keep going if there weren't any useful starts
         gcoord_grps = orf_strength_df[include_starts].groupby('gcoord')
         # even if we are willing to count abinit towards start strength, we certainly shouldn't count histop
         covmat_starts = covmat[np.ix_(include_starts.values, include_starts.values)]
         orf_strs_starts = orf_strs[include_starts.values]
     else:
+        if not elongating_orfs.any():
+            return failure_return
         gcoord_grps = orf_strength_df[elongating_orfs].groupby('gcoord')
         covmat_starts = covmat[np.ix_(elongating_orfs.values, elongating_orfs.values)]
         orf_strs_starts = orf_strs[elongating_orfs.values]
