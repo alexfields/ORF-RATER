@@ -4,9 +4,8 @@ import argparse
 import os
 import pandas as pd
 import numpy as np
-from sklearn.grid_search import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.cross_validation import cross_val_score, StratifiedKFold
+from sklearn.model_selection import GridSearchCV, cross_val_score, StratifiedKFold
 from multiisotonic.multiisotonic import MultiIsotonicRegressor
 import sys
 from time import strftime
@@ -136,7 +135,7 @@ gold_feat = gold_df[feature_columns].values
 if opts.verbose:
     logprint('Gold set contains %d annotated ORFs and %d unannotated ORFs' % ((gold_class > 0).sum(), (gold_class < 0).sum()))
 
-mycv = StratifiedKFold(gold_class, opts.cvfold, shuffle=True)
+mycv = StratifiedKFold(opts.cvfold, shuffle=True, random_state=42)  # define random_state so same CV splits are used throughout parameter search
 if len(opts.minperleaf) > 1:
     currgrid = GridSearchCV(RandomForestClassifier(n_estimators=opts.numtrees), param_grid={'min_samples_leaf': opts.minperleaf},
                             scoring='accuracy', cv=mycv, n_jobs=opts.numproc)
@@ -155,7 +154,7 @@ if len(opts.minperleaf) > 1:
 else:
     def _get_score(val):
         return cross_val_score(RandomForestClassifier(n_estimators=opts.numtrees, min_samples_leaf=val),
-                               gold_feat, gold_class, scoring='roc_auc', cv=mycv, n_jobs=opts.numproc).mean()
+                               gold_feat, gold_class, scoring='accuracy', cv=mycv, n_jobs=opts.numproc).mean()
     prevval = opts.minperleaf[0]
     prevres = _get_score(prevval)
     currval = prevval*2
