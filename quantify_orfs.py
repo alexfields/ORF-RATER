@@ -95,7 +95,7 @@ rdlens.sort()
 with open(opts.inbed, 'rU') as inbed:
     bedlinedict = {line.split()[3]: line for line in inbed}
 
-with pd.get_store(opts.ratingsfile, mode='r') as ratingstore:
+with pd.HDFStore(opts.ratingsfile, mode='r') as ratingstore:
     chroms = ratingstore.select('orfratings/meta/chrom/meta').values  # because saved as categorical, this is the list of all chromosomes
 
 if opts.verbose:

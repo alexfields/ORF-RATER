@@ -85,7 +85,7 @@ allstops = pd.DataFrame(columns=['tfam', 'chrom', 'gstop', 'strand'])
 feature_columns = []
 stopcols = []
 for (regressfile, colname) in zip(regressfiles, colnames):
-    with pd.get_store(regressfile, mode='r') as instore:
+    with pd.HDFStore(regressfile, mode='r') as instore:
         if 'stop_strengths' in instore:
             stopcols.append(colname)
             currstarts = instore.select('start_strengths', columns=['tfam', 'chrom', 'gcoord', 'strand', 'start_strength', 'W_start']) \
@@ -113,7 +113,8 @@ for (regressfile, colname) in zip(regressfiles, colnames):
             allstarts = allstarts.merge(currstarts, how='outer').fillna(0.)
             feature_columns.append('W_start_'+colname)
 
-orfratings = allorfs[allorfs['gcoord'] != allorfs['gstop']].merge(allstarts, how='left').merge(allstops, how='left').fillna(0.)
+orfratings = allorfs[allorfs['gcoord'] != allorfs['gstop']].merge(allstarts, how='left').merge(allstops, how='left')
+orfratings.fillna({col: 0. for col in orfratings.columns if col not in allorfs.columns}, inplace=True)
 
 stopgrps = orfratings.groupby(['chrom', 'gstop', 'strand'])
 for stopcol in stopcols:

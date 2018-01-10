@@ -390,7 +390,7 @@ def _regress_chrom(chrom_to_do):
 
     return res
 
-with pd.get_store(opts.orfstore, mode='r') as orfstore:
+with pd.HDFStore(opts.orfstore, mode='r') as orfstore:
     chroms = orfstore.select('all_orfs/meta/chrom/meta').values  # because saved as categorical, this is the list of all chromosomes
 
 if os.path.isfile(metafilename) and not opts.force:
@@ -457,7 +457,7 @@ if not opts.noregress:
                 start_strengths[catfield] = start_strengths[catfield].astype('category')  # saves disk space and read/write time
             if catfield in orf_strengths.columns:
                 orf_strengths[catfield] = orf_strengths[catfield].astype('category')  # saves disk space and read/write time
-        with pd.get_store(regressfilename, mode='w') as outstore:
+        with pd.HDFStore(regressfilename, mode='w') as outstore:
             outstore.put('orf_strengths', orf_strengths, format='t', data_columns=True)
             outstore.put('start_strengths', start_strengths, format='t', data_columns=True)
     else:
@@ -472,7 +472,7 @@ if not opts.noregress:
                 orf_strengths[catfield] = orf_strengths[catfield].astype('category')  # saves disk space and read/write time
             if catfield in stop_strengths.columns:
                 stop_strengths[catfield] = stop_strengths[catfield].astype('category')  # saves disk space and read/write time
-        with pd.get_store(regressfilename, mode='w') as outstore:
+        with pd.HDFStore(regressfilename, mode='w') as outstore:
             outstore.put('orf_strengths', orf_strengths, format='t', data_columns=True)
             outstore.put('start_strengths', start_strengths, format='t', data_columns=True)
             outstore.put('stop_strengths', stop_strengths, format='t', data_columns=True)
